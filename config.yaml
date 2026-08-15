@@ -36,9 +36,8 @@ sources:
     enabled: true
     # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
     # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
-    feed_urls: [
-	https://www.google.com/alerts/feeds/12260612288641769738/4685068943260050875
-]
+    feed_urls:
+		- "https://www.google.com/alerts/feeds/12260612288641769738/4685068943260050875"
 
 # Google Sheets, куди пишеться таблиця (колонки A-G)
 google_sheets:

@@ -1,0 +1,71 @@
+# ==========================================================
+# Конфігурація агента пошуку вакансій
+# ==========================================================
+
+keywords:
+  - "стажер"
+  - "intern"
+  - "data manager"
+  - "content manager"
+  - "data analyst"
+  - "qa"
+  - "data quality"
+
+# Джерела, які потрібно опитувати. can_disable дозволяє швидко
+# вимкнути джерело, якщо його розмітка зламалась, не видаляючи конфіг.
+sources:
+  djinni:
+    enabled: true
+  dou:
+    enabled: true
+  remoteok:
+    enabled: true
+  weworkremotely:
+    enabled: true
+  robota_ua:
+    enabled: true
+  work_ua:
+    enabled: true
+  nofluffjobs:
+    enabled: true
+  justremote:
+    enabled: true
+  indeed:
+    enabled: true
+  linkedin_alerts:
+    enabled: true
+    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
+    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
+    feed_urls: [
+	https://www.google.com/alerts/feeds/12260612288641769738/4685068943260050875
+]
+
+# Google Sheets, куди пишеться таблиця (колонки A-G)
+google_sheets:
+  spreadsheet_id: "1RYP2ub_m7sCtag-MLuZKeukyUhn9WkzvMRKnZ52jeDw"
+  worksheet_name: "Vacancies"
+
+# Google Drive, звідки читаються 12 резюме (.pdf)
+google_drive:
+  resumes_folder_id: "16wjJ0UDPk28jcX6jcllsvjWxrkPi0qIP"
+
+# Локальний матчинг без AI: ваги для розрахунку Match Score
+matching:
+  min_score_to_report: 20   # % — вакансії нижче цього порогу не потрапляють у звіт
+  title_weight: 2.0          # збіг ключового слова в заголовку резюме важить більше
+  body_weight: 1.0
+  # Опційне збагачення через Gemini API (безкоштовний тариф), лише для
+  # вакансій, що вже пройшли min_score_to_report. Якщо немає секрету
+  # GEMINI_API_KEY — агент просто працює без цього кроку, без помилок.
+  use_gemini_enrichment: true
+  gemini_model: "gemini-2.5-flash"
+
+telegram:
+  # chat_id можна лишити порожнім і взяти з секрету TELEGRAM_CHAT_ID
+  parse_mode: "HTML"
+
+# Часове вікно звіту (для довідки; фактичний запуск керується GitHub Actions cron)
+report_window:
+  timezone: "Europe/Kyiv"
+  start: "09:00"
+  end: "10:00"

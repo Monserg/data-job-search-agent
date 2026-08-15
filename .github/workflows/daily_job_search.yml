@@ -1,0 +1,42 @@
+name: Daily Job Search
+
+on:
+  schedule:
+    # 07:00 UTC = 10:00 Kyiv (літній час, UTC+3) / 09:00 Kyiv (зимовий час, UTC+2)
+    # Тобто запуск завжди потрапляє в межі вікна 9:00-10:00 за київським часом.
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}   # дозволяє запустити вручну з вкладки Actions для тесту
+
+permissions:
+  contents: write   # потрібно, щоб закомітити оновлений data/seen_jobs.json
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run job search agent
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python src/main.py
+
+      - name: Commit updated seen_jobs.json
+        run: |
+          git config user.name "job-search-agent-bot"
+          git config user.email "actions@github.com"
+          git add data/seen_jobs.json
+          git diff --staged --quiet || git commit -m "chore: update seen jobs [skip ci]"
+          git push

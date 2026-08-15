@@ -56,7 +56,7 @@ matching:
   # вакансій, що вже пройшли min_score_to_report. Якщо немає секрету
   # GEMINI_API_KEY — агент просто працює без цього кроку, без помилок.
   use_gemini_enrichment: true
-  gemini_model: "gemini-2.5-flash"
+  gemini_model: "gemini-3.5-flash"
 
 telegram:
   # chat_id можна лишити порожнім і взяти з секрету TELEGRAM_CHAT_ID

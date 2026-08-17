@@ -7,7 +7,7 @@
 3. Прибрати дублікати (порівняно з попередніми запусками).
 4. Порахувати Match Score / найкраще резюме для кожної нової вакансії.
 5. Дописати рядки у Google Sheets.
-6. Надіслати дайджест у Telegram.
+6. Надіслати картки в Telegram.
 7. Зберегти оновлений список "вже бачених" вакансій.
 """
 import datetime
@@ -48,7 +48,47 @@ def collect_jobs(config: dict) -> list:
 
     return all_jobs
 
-def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list: min_score = config["matching"]["min_score_to_report"] use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured() gemini_model = config["matching"].get("gemini_model", "gemini-3.5-flash") today = datetime.date.today().isoformat() enriched = [] for job in jobs: best_resume, score, overlap = best_resume_for_job(job["text"], resumes) if score < min_score: continue reason = build_reason(overlap) if use_gemini and best_resume: gemini_result = safe_call( gemini_client.analyze_fit, job["text"], resumes[best_resume], best_resume, gemini_model, ) if gemini_result and gemini_result.get("reason"): score = gemini_result["score"] reason = f"{gemini_result['reason']} (Gemini AI)" if score < min_score: continue job["match_score"] = score job["best_resume"] = best_resume or "—" job["reason"] = reason job["date_added"] = today enriched.append(job) enriched.sort(key=lambda j: j["match_score"], reverse=True) return enriched
+
+def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
+    min_score = config["matching"]["min_score_to_report"]
+    use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured()
+    gemini_model = config["matching"].get("gemini_model", "gemini-3.5-flash")
+
+    today = datetime.date.today().isoformat()
+    enriched = []
+    for job in jobs:
+        best_resume, score, overlap = best_resume_for_job(job["text"], resumes)
+        if score < min_score:
+            continue
+
+        reason = build_reason(overlap)
+
+        # Gemini-збагачення — лише для вакансій, що вже пройшли локальний
+        # поріг, щоб не витрачати денний ліміт безкоштовного тарифу даремно.
+        if use_gemini and best_resume:
+            gemini_result = safe_call(
+                gemini_client.analyze_fit,
+                job["text"], resumes[best_resume], best_resume, gemini_model,
+            )
+            if gemini_result and gemini_result.get("reason"):
+                score = gemini_result["score"]
+                reason = f"{gemini_result['reason']} (Gemini AI)"
+
+        # Повторна перевірка порогу вже після Gemini — його семантична
+        # оцінка часто нижча за грубий локальний збіг слів, і саме вона
+        # має бути остаточним фільтром для звіту.
+        if score < min_score:
+            continue
+
+        job["match_score"] = score
+        job["best_resume"] = best_resume or "—"
+        job["reason"] = reason
+        job["date_added"] = today
+        enriched.append(job)
+
+    enriched.sort(key=lambda j: j["match_score"], reverse=True)
+    return enriched
+
 
 def jobs_to_sheet_rows(jobs: list) -> list:
     rows = []
@@ -99,6 +139,7 @@ def main() -> int:
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Не вдалось записати у Google Sheets: %s", exc)
+
     try:
         telegram_client.send_job_cards(matched_jobs)
     except Exception as exc:  # noqa: BLE001

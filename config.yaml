@@ -34,6 +34,10 @@ sources:
     enabled: true
   linkedin_alerts:
     enabled: true
+  remotive:
+    enabled: true
+  himalayas:
+    enabled: true    
     # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
     # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
 feed_urls: ["https://www.google.com/alerts/feeds/перше", "https://www.google.com/alerts/feeds/друге", "https://www.google.com/alerts/feeds/третє"]

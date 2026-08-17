@@ -133,9 +133,7 @@ def main() -> int:
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Не вдалось записати у Google Sheets: %s", exc)
-
-    digest = telegram_client.build_digest(matched_jobs)
-try:
+    try:
         telegram_client.send_job_cards(matched_jobs)
     except Exception as exc:  # noqa: BLE001
         logger.error("Не вдалось надіслати Telegram-повідомлення: %s", exc)

@@ -2,7 +2,7 @@
 Пише рядки у Google Sheets таблицю зі структурою:
 A: Дата додавання | B: Посада/Вакансія | C: Компанія & Джерело |
 D: Посилання (URL) | E: Match Score (%) | F: Короткий аналіз |
-G: Рекомендоване CV
+G: Рекомендоване CV | H: Ярус
 
 Авторизація — той самий Service Account, що й для Google Drive
 (GOOGLE_SERVICE_ACCOUNT_JSON), просто з іншим scope.
@@ -26,6 +26,7 @@ HEADER_ROW = [
     "Match Score (%)",
     "Короткий аналіз (чому підходить)",
     "Рекомендоване CV",
+    "Ярус",
 ]
 
 
@@ -49,7 +50,7 @@ def _get_or_create_worksheet(gc, spreadsheet_id: str, worksheet_name: str):
 
 
 def append_rows(spreadsheet_id: str, worksheet_name: str, rows: list) -> None:
-    """rows: list[list] — вже у порядку колонок A-G."""
+    """rows: list[list] — вже у порядку колонок A-H."""
     if not rows:
         return
     gc = _get_client()

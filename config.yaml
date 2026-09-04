@@ -2,14 +2,32 @@
 # Конфігурація агента пошуку вакансій
 # ==========================================================
 
+# Три яруси пріоритету. Пошук не звужується — усі три яруси опитуються
+# паралельно, різниця лише в тому, що Tier 1 завжди йде найвище у звіті
+# (Google Sheets / Telegram), незалежно від Match Score.
 keywords:
-  - "стажер"
-  - "intern"
-  - "data manager"
-  - "content manager"
-  - "data analyst"
-  - "qa"
-  - "data quality"
+  tier1:  # швидкий дохід — найвищий пріоритет
+    - "iOS Developer"
+    - "Swift"
+    - "Senior iOS"
+    - "iOS Contract"
+    - "Freelance iOS"
+  tier2:  # будь-яка стабільна робота — існуючий список, нічого не видалено
+    - "стажер"
+    - "intern"
+    - "data manager"
+    - "content manager"
+    - "data analyst"
+    - "qa"
+    - "data quality"
+  tier3:  # стратегічна ціль — довгостроковий напрям, менш терміновий
+    - "AI Engineer"
+    - "Applied AI"
+    - "ML Engineer"
+    - "Prompt Engineer"
+    - "AI Agent Developer"
+    - "LLM Engineer"
+    - "Machine Learning"
 
 # Джерела, які потрібно опитувати. can_disable дозволяє швидко
 # вимкнути джерело, якщо його розмітка зламалась, не видаляючи конфіг.
@@ -34,15 +52,15 @@ sources:
     enabled: true
   linkedin_alerts:
     enabled: true
+    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
+    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
+    feed_urls: []
   remotive:
     enabled: true
   himalayas:
-    enabled: true    
-    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
-    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
-feed_urls: ["https://www.google.com/alerts/feeds/перше", "https://www.google.com/alerts/feeds/друге", "https://www.google.com/alerts/feeds/третє"]
+    enabled: true
 
-# Google Sheets, куди пишеться таблиця (колонки A-G)
+# Google Sheets, куди пишеться таблиця (колонки A-H)
 google_sheets:
   spreadsheet_id: "1RYP2ub_m7sCtag-MLuZKeukyUhn9WkzvMRKnZ52jeDw"
   worksheet_name: "Vacancies"

@@ -27,9 +27,41 @@ import gemini_client
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("job_agent.main")
 
+# Мітки ярусів для колонки в Google Sheets. 99 — теоретичний випадок, коли
+# жодне ключове слово з жодного ярусу не знайдено в тексті вакансії (не мало
+# б траплятись, бо вакансія вже пройшла keyword-фільтр на етапі скрапінгу).
+TIER_LABELS = {1: "Tier 1 (iOS)", 2: "Tier 2 (стабільна робота)", 3: "Tier 3 (AI/ML)", 99: "—"}
+
+
+def flatten_keywords(keywords_cfg: dict) -> list:
+    """
+    Об'єднує всі три яруси в один плаский список для скраперів — пошук
+    навмисно НЕ звужується, ярусність впливає лише на сортування звіту,
+    а не на те, які вакансії потрапляють у видачу.
+    """
+    flat = []
+    for tier_name in ("tier1", "tier2", "tier3"):
+        flat.extend(keywords_cfg.get(tier_name, []))
+    return flat
+
+
+def determine_tier(text: str, keywords_cfg: dict) -> int:
+    """
+    Повертає номер найвищого пріоритету (найменший номер ярусу), чиє
+    ключове слово зустрічається в тексті вакансії. Перевіряє Tier 1 →
+    Tier 2 → Tier 3 по черзі, тож якщо вакансія збігається і з Tier 1,
+    і з Tier 3 — вона все одно піде як Tier 1.
+    """
+    text_low = (text or "").lower()
+    for tier_num, tier_name in ((1, "tier1"), (2, "tier2"), (3, "tier3")):
+        for kw in keywords_cfg.get(tier_name, []):
+            if kw.lower() in text_low:
+                return tier_num
+    return 99
+
 
 def collect_jobs(config: dict) -> list:
-    keywords = config["keywords"]
+    keywords = flatten_keywords(config["keywords"])
     all_jobs = []
 
     for name, module in REGISTRY.items():
@@ -84,9 +116,12 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
         job["best_resume"] = best_resume or "—"
         job["reason"] = reason
         job["date_added"] = today
+        job["tier"] = determine_tier(job["text"], config["keywords"])
         enriched.append(job)
 
-    enriched.sort(key=lambda j: j["match_score"], reverse=True)
+    # Спершу за ярусом (Tier 1 завжди зверху, незалежно від Match Score),
+    # усередині одного ярусу — за Match Score, як і раніше.
+    enriched.sort(key=lambda j: (j["tier"], -j["match_score"]))
     return enriched
 
 
@@ -101,6 +136,7 @@ def jobs_to_sheet_rows(jobs: list) -> list:
             job["match_score"],
             job["reason"],
             job["best_resume"],
+            TIER_LABELS.get(job.get("tier"), "—"),
         ])
     return rows
 

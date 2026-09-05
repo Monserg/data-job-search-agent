@@ -2,14 +2,52 @@ name: Daily Job Search
 
 on:
   schedule:
-    - cron: '17 4 * * *' # ~07:17 за Києвом у літній час
+    # GitHub Actions cron працює лише в UTC і не знає про DST, тому тут два
+    # тригери на день — по одному для літнього (EEST) і зимового (EET) часу
+    # Києва. Реально виконається робота лише в одному з двох (див. джоб
+    # check-time нижче) — інший просто "прокинеться" й одразу вийде.
+    - cron: '0 6 * * *'   # ціль: 9:00 Київ, літній час (UTC+3)
+    - cron: '0 7 * * *'   # ціль: 9:00 Київ, зимовий час (UTC+2)
   workflow_dispatch: {}   # дозволяє запустити вручну з вкладки Actions для тесту
 
 permissions:
   contents: write   # потрібно, щоб закомітити оновлений data/seen_jobs.json
 
 jobs:
+  check-time:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Перевірити, чи слід запускати агента саме зараз
+        id: check
+        run: |
+          today=$(TZ="Europe/Kyiv" date +%F)
+          hour=$(TZ="Europe/Kyiv" date +%H)
+          echo "Зараз за Києвом: $today $hour:00"
+
+          last_run="none"
+          if [ -f data/last_run_date.txt ]; then
+            last_run=$(cat data/last_run_date.txt)
+          fi
+          echo "Останній успішний запуск: $last_run"
+
+          if [ "$last_run" = "$today" ]; then
+            echo "Сьогодні вже був запуск — пропускаю."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$hour" -ge 9 ] && [ "$hour" -lt 14 ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Зараз не робоче вікно (9:00-14:00 Київ) — пропускаю."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   run-agent:
+    needs: check-time
+    if: needs.check-time.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -31,10 +69,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python src/main.py
 
-      - name: Commit updated seen_jobs.json
+      - name: Позначити сьогоднішній запуск як виконаний
+        run: TZ="Europe/Kyiv" date +%F > data/last_run_date.txt
+
+      - name: Commit updated seen_jobs.json / last_run_date.txt
         run: |
           git config user.name "job-search-agent-bot"
           git config user.email "actions@github.com"
-          git add data/seen_jobs.json
+          git add data/seen_jobs.json data/last_run_date.txt
           git diff --staged --quiet || git commit -m "chore: update seen jobs [skip ci]"
           git push

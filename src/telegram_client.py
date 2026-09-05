@@ -15,9 +15,9 @@ import requests
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 TIER_EMOJI = {
-    1: "🥇 Пріоритет 1 — швидкий дохід",
-    2: "🥈 Пріоритет 2 — стабільна робота",
-    3: "🥉 Пріоритет 3 — стратегічна ціль",
+    1: "🥇 Швидкий дохід",
+    2: "🥈 Стабільна робота",
+    3: "🥉 Стратегічна ціль",
 }
 
 # Пауза між повідомленнями, щоб не впертись у Telegram flood control
@@ -89,9 +89,9 @@ def send_job_cards(jobs: list) -> None:
         if t in tier_counts:
             tier_counts[t] += 1
     breakdown = (
-        f"🥇 Пріоритет 1: {tier_counts[1]}  "
-        f"🥈 Пріоритет 2: {tier_counts[2]}  "
-        f"🥉 Пріоритет 3: {tier_counts[3]}"
+        f"🥇 Швидкий дохід: {tier_counts[1]}  "
+        f"🥈 Стабільна робота: {tier_counts[2]}  "
+        f"🥉 Стратегічна ціль: {tier_counts[3]}"
     )
 
     _send_single(

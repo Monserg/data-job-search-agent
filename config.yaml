@@ -60,6 +60,12 @@ sources:
   himalayas:
     enabled: true
 
+# Вакансії, що містять будь-яке з цих слів (у заголовку чи описі), повністю
+# виключаються зі звіту — незалежно від ярусу чи Match Score. Порівняння
+# без урахування регістру.
+exclude_keywords:
+  - "deftech"
+
 # Google Sheets, куди пишеться таблиця (колонки A-H)
 google_sheets:
   spreadsheet_id: "1RYP2ub_m7sCtag-MLuZKeukyUhn9WkzvMRKnZ52jeDw"

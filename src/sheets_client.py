@@ -51,9 +51,19 @@ def _get_or_create_worksheet(gc, spreadsheet_id: str, worksheet_name: str):
 
 
 def append_rows(spreadsheet_id: str, worksheet_name: str, rows: list) -> None:
-    """rows: list[list] — вже у порядку колонок A-I."""
+    """
+    rows: list[list] — вже у порядку колонок A-I, і вже відсортовані за
+    ярусом (Tier 1 → 2 → 3) усередині одного запуску, як формує main.py.
+
+    Назва функції лишена для сумісності (main.py її й досі викликає), але
+    поведінка змінена: замість дописування в кінець таблиці рядки
+    ВСТАВЛЯЮТЬСЯ одразу під заголовком (рядок 2). Так свіжі вакансії
+    щодня опиняються зверху, а не тонуть під місяцями старих записів
+    унизу — і порядок усередині сьогоднішньої партії (Tier 1→2→3)
+    зберігається, бо вона вставляється одним блоком.
+    """
     if not rows:
         return
     gc = _get_client()
     ws = _get_or_create_worksheet(gc, spreadsheet_id, worksheet_name)
-    ws.append_rows(rows, value_input_option="USER_ENTERED")
+    ws.insert_rows(rows, row=2, value_input_option="USER_ENTERED")

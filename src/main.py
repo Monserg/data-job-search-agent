@@ -81,6 +81,23 @@ def collect_jobs(config: dict) -> list:
     return all_jobs
 
 
+def filter_excluded(jobs: list, exclude_keywords: list) -> list:
+    """
+    Прибирає вакансії, що містять будь-яке зі стоп-слів (наприклад
+    "deftech") у заголовку чи описі — повністю, незалежно від ярусу
+    чи Match Score. Виключені вакансії не потрапляють навіть у
+    data/seen_jobs.json, тож якщо стоп-слово пізніше прибрати з конфіга,
+    ці ж вакансії зможуть з'явитись у звіті знову.
+    """
+    if not exclude_keywords:
+        return jobs
+    exclude_low = [kw.lower() for kw in exclude_keywords]
+    return [
+        job for job in jobs
+        if not any(kw in (job.get("text") or "").lower() for kw in exclude_low)
+    ]
+
+
 def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
     min_score = config["matching"]["min_score_to_report"]
     use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured()
@@ -158,6 +175,9 @@ def main() -> int:
 
     raw_jobs = collect_jobs(config)
     logger.info("Всього знайдено %d вакансій (з усіх джерел, до дедублікації)", len(raw_jobs))
+
+    raw_jobs = filter_excluded(raw_jobs, config.get("exclude_keywords", []))
+    logger.info("Після виключень (стоп-слова): залишилось %d", len(raw_jobs))
 
     seen_ids = load_seen()
     new_jobs, updated_seen = filter_new_jobs(raw_jobs, seen_ids)

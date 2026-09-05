@@ -40,7 +40,6 @@ def build_job_message(job: dict) -> str:
     company = _esc(job.get("company") or "—")
     source = _esc(job.get("source", ""))
     score = job.get("match_score", 0)
-    resume = _esc(job.get("best_resume", "—"))
     reason = _esc(job.get("reason", ""))
     url = job.get("url", "")
     tier_label = TIER_EMOJI.get(job.get("tier"))
@@ -51,9 +50,7 @@ def build_job_message(job: dict) -> str:
     lines += [
         f"📌 <b>{title}</b> в {company}",
         "",
-        f"🌍 <b>Джерело:</b> {source}",
         f"🎯 <b>Match Score:</b> {score}%",
-        f"📄 <b>Рекомендоване CV:</b> {resume}",
     ]
     if reason:
         lines.append(f"💬 {reason}")

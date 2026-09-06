@@ -2,7 +2,8 @@
 Пише рядки у Google Sheets таблицю зі структурою:
 A: Дата додавання | B: Посада/Вакансія | C: Компанія & Джерело |
 D: Посилання (URL) | E: Match Score (%) | F: Короткий аналіз |
-G: Рекомендоване CV | H: Пріоритет | I: На адаптацію
+G: Рекомендоване CV | H: Пріоритет | I: CANVA | J: EN | K: На адаптацію
+(L: Виконано — керується вручну, код туди не пише)
 
 Авторизація — той самий Service Account, що й для Google Drive
 (GOOGLE_SERVICE_ACCOUNT_JSON), просто з іншим scope.
@@ -27,6 +28,8 @@ HEADER_ROW = [
     "Короткий аналіз (чому підходить)",
     "Рекомендоване CV",
     "Пріоритет",
+    "CANVA",
+    "EN",
     "На адаптацію",
 ]
 
@@ -52,7 +55,7 @@ def _get_or_create_worksheet(gc, spreadsheet_id: str, worksheet_name: str):
 
 def append_rows(spreadsheet_id: str, worksheet_name: str, rows: list) -> None:
     """
-    rows: list[list] — вже у порядку колонок A-I, і вже відсортовані за
+    rows: list[list] — вже у порядку колонок A-K, і вже відсортовані за
     ярусом (Tier 1 → 2 → 3) усередині одного запуску, як формує main.py.
 
     Назва функції лишена для сумісності (main.py її й досі викликає), але

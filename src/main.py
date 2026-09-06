@@ -154,6 +154,8 @@ def jobs_to_sheet_rows(jobs: list) -> list:
             job["reason"],
             job["best_resume"],
             TIER_LABELS.get(job.get("tier"), "—"),
+            "",  # CANVA — порожньо = ATS (за замовчуванням), TRUE = CANVA
+            "",  # EN — порожньо = UA (за замовчуванням), TRUE = EN
             "",  # На адаптацію — порожньо, заповнюється вручну галочкою
         ])
     return rows

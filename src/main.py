@@ -88,6 +88,290 @@ def detect_ats_platform(url: str) -> str:
     return ""
 
 
+# Текстові сигнали ATS для випадків, коли URL не входить у ATS_DOMAINS —
+# типово для українських джоб-бордів (Djinni, DOU, Work.ua), де посилання
+# на вакансію веде на сам джоб-борд, а не на кінцеву форму подачі. Тут
+# ловимо формулювання в описі, що натякають на формальний процес подачі
+# через портал/форму, а не пряме звернення до людини. Це так само груба
+# евристика, як і requires_experience — не гарантує повного покриття.
+ATS_TEXT_PATTERNS = [
+    re.compile(r"запо?вн[іи]ть\s+форм", re.IGNORECASE),
+    re.compile(r"careers?\s+portal", re.IGNORECASE),
+    re.compile(r"recruit(ing|ment)\s+platform", re.IGNORECASE),
+    re.compile(r"система\s+відбору\s+кандидатів", re.IGNORECASE),
+    re.compile(r"apply\s+via\s+our", re.IGNORECASE),
+    re.compile(r"apply\s+through\s+our", re.IGNORECASE),
+    re.compile(r"applicant\s+tracking\s+system", re.IGNORECASE),
+    re.compile(r"пройдіть\s+за\s+посиланням.{0,40}(форм|анкет)", re.IGNORECASE),
+]
+
+
+def detect_ats_text_signal(text: str) -> bool:
+    """
+    Чи містить опис вакансії текстові ознаки формального ATS-процесу
+    подачі (форма/портал), на відміну від прямого звернення до людини
+    (email, Telegram, "напишіть рекрутеру"). Доповнює detect_ats_platform
+    для джерел, де URL нічого не каже (переважно українські джоб-борди).
+    """
+    if not text:
+        return False
+    return any(p.search(text) for p in ATS_TEXT_PATTERNS)
+
+
+def requires_experience(text: str) -> bool:
+    """
+    Чи згадує опис вакансії мінімальну вимогу досвіду роботи (наприклад
+    "досвід роботи від 1 року", "2+ years of experience"). Застосовується
+    лише до Tier 2/3 — там шукаємо вакансії саме БЕЗ вимог до досвіду.
+    """
+    if not text:
+        return False
+    return any(p.search(text) for p in EXPERIENCE_REQUIRED_PATTERNS)
+
+
+def flatten_keywords(keywords_cfg: dict) -> list:
+    """
+    Об'єднує всі три яруси в один плаский список для скраперів — пошук
+    навмисно НЕ звужується, ярусність впливає лише на сортування звіту,
+    а не на те, які вакансії потрапляють у видачу.
+    """
+    flat = []
+    for tier_name in ("tier1", "tier2", "tier3"):
+        flat.extend(keywords_cfg.get(tier_name, []))
+    return flat
+
+
+def determine_tier(text: str, keywords_cfg: dict) -> int:
+    """
+    Повертає номер найвищого пріоритету (найменший номер ярусу), чиє
+    ключове слово зустрічається в тексті вакансії. Перевіряє Tier 1 →
+    Tier 2 → Tier 3 по черзі, тож якщо вакансія збігається і з Tier 1,
+    і з Tier 3 — вона все одно піде як Tier 1.
+    """
+    text_low = (text or "").lower()
+    for tier_num, tier_name in ((1, "tier1"), (2, "tier2"), (3, "tier3")):
+        for kw in keywords_cfg.get(tier_name, []):
+            if kw.lower() in text_low:
+                return tier_num
+    return 99
+
+
+def collect_jobs(config: dict) -> list:
+    keywords = flatten_keywords(config["keywords"])
+    all_jobs = []
+
+    for name, module in REGISTRY.items():
+        source_cfg = config["sources"].get(name, {})
+        if not source_cfg.get("enabled"):
+            continue
+
+        logger.info("Опитую джерело: %s", name)
+        if name == "linkedin_alerts":
+            jobs = safe_call(module.search, keywords, source_cfg.get("feed_urls", []))
+        else:
+            jobs = safe_call(module.search, keywords)
+
+        logger.info("  -> знайдено %d вакансій", len(jobs))
+        all_jobs.extend(jobs)
+
+    return all_jobs
+
+
+def filter_excluded(jobs: list, exclude_keywords: list) -> list:
+    """
+    Прибирає вакансії, що містять будь-яке зі стоп-слів (наприклад
+    "deftech") у заголовку чи описі — повністю, незалежно від ярусу
+    чи Match Score. Виключені вакансії не потрапляють навіть у
+    data/seen_jobs.json, тож якщо стоп-слово пізніше прибрати з конфіга,
+    ці ж вакансії зможуть з'явитись у звіті знову.
+    """
+    if not exclude_keywords:
+        return jobs
+    exclude_low = [kw.lower() for kw in exclude_keywords]
+    return [
+        job for job in jobs
+        if not any(kw in (job.get("text") or "").lower() for kw in exclude_low)
+    ]
+
+
+def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
+    min_score = config["matching"]["min_score_to_report"]
+    use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured()
+    gemini_model = config["matching"].get("gemini_model", "gemini-3.5-flash")
+
+    today = datetime.date.today().isoformat()
+    enriched = []
+    for job in jobs:
+        best_resume, score, overlap = best_resume_for_job(job["text"], resumes)
+        if score < min_score:
+            continue
+
+        tier = determine_tier(job["text"], config["keywords"])
+        if tier in (2, 3) and requires_experience(job["text"]):
+            continue
+
+        reason = build_reason(overlap)
+
+        # Gemini-збагачення — лише для вакансій, що вже пройшли локальний
+        # поріг, щоб не витрачати денний ліміт безкоштовного тарифу даремно.
+        if use_gemini and best_resume:
+            gemini_result = safe_call(
+                gemini_client.analyze_fit,
+                job["text"], resumes[best_resume], best_resume, gemini_model,
+            )
+            if gemini_result and gemini_result.get("reason"):
+                score = gemini_result["score"]
+                reason = f"{gemini_result['reason']} (Gemini AI)"
+
+        # Повторна перевірка порогу вже після Gemini — його семантична
+        # оцінка часто нижча за грубий локальний збіг слів, і саме вона
+        # має бути остаточним фільтром для звіту.
+        if score < min_score:
+            continue
+
+        ats_platform = detect_ats_platform(job.get("url", ""))
+        if ats_platform:
+            reason = f"{reason} | Ймовірно ATS: {ats_platform}"
+        elif detect_ats_text_signal(job["text"]):
+            reason = f"{reason} | Ймовірно ATS (текстові ознаки)"
+
+        job["match_score"] = score
+        job["best_resume"] = best_resume or "—"
+        job["reason"] = reason
+        job["date_added"] = today
+        job["tier"] = tier
+        enriched.append(job)
+
+    # Спершу за ярусом (Tier 1 завжди зверху, незалежно від Match Score),
+    # усередині одного ярусу — за Match Score, як і раніше.
+    enriched.sort(key=lambda j: (j["tier"], -j["match_score"]))
+    return enriched
+
+
+def jobs_to_sheet_rows(jobs: list) -> list:
+    rows = []
+    for job in jobs:
+        rows.append([
+            job["date_added"],
+            job["title"],
+            f"{job.get('company', '') or '—'} / {job['source']}",
+            job["url"],
+            job["match_score"],
+            job["reason"],
+            job["best_resume"],
+            TIER_LABELS.get(job.get("tier"), "—"),
+            "",  # CANVA — порожньо = ATS (за замовчуванням), TRUE = CANVA
+            "",  # EN — порожньо = UA (за замовчуванням), TRUE = EN
+            "",  # На адаптацію — порожньо, заповнюється вручну галочкою
+        ])
+    return rows
+
+
+def main() -> int:
+    config = load_config()
+
+    logger.info("Завантажую резюме з Google Drive...")
+    try:
+        resumes = drive_client.load_resumes(config["google_drive"]["resumes_folder_id"])
+        logger.info("Завантажено %d резюме", len(resumes))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не вдалось завантажити резюме: %s", exc)
+        return 1
+
+    if not resumes:
+        logger.error("У папці Drive немає жодного .pdf резюме — зупиняюсь.")
+        return 1
+
+    raw_jobs = collect_jobs(config)
+    logger.info("Всього знайдено %d вакансій (з усіх джерел, до дедублікації)", len(raw_jobs))
+
+    raw_jobs = filter_excluded(raw_jobs, config.get("exclude_keywords", []))
+    logger.info("Після виключень (стоп-слова): залишилось %d", len(raw_jobs))
+
+    seen_ids = load_seen()
+    new_jobs, updated_seen = filter_new_jobs(raw_jobs, seen_ids)
+    logger.info("З них нових (раніше не звітованих): %d", len(new_jobs))
+
+    matched_jobs = enrich_with_matching(new_jobs, resumes, config)
+    logger.info("Пройшли поріг Match Score: %d", len(matched_jobs))
+
+    rows = jobs_to_sheet_rows(matched_jobs)
+    try:
+        sheets_client.append_rows(
+            config["google_sheets"]["spreadsheet_id"],
+            config["google_sheets"]["worksheet_name"],
+            rows,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не вдалось записати у Google Sheets: %s", exc)
+
+    try:
+        telegram_client.send_job_cards(matched_jobs)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Не вдалось надіслати Telegram-повідомлення: %s", exc)
+
+    # Зберігаємо ID навіть тих вакансій, що не пройшли поріг матчингу —
+    # інакше вони знову й знову з'являтимуться в майбутніх прогонах.
+    save_seen(updated_seen)
+    logger.info("Готово.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())# Тільки для Tier 2/3 (Tier 1/iOS — без обмежень за досвідом, там досвід є).
+# Груба текстова евристика, а не семантичне розуміння — ловить найпоширеніші
+# формулювання вимоги мінімального досвіду, але не гарантує 100% покриття
+# нестандартних фраз. Час від часу варто вручну перевіряти результат.
+EXPERIENCE_REQUIRED_PATTERNS = [
+    re.compile(r"досвід\s+роботи?\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"досвід\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"\d+\+?\s*(рік|роки|років)\s+досвіду", re.IGNORECASE),
+    re.compile(r"стаж\s+роботи?\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"\d+\+?\s*years?\s+(of\s+)?experience", re.IGNORECASE),
+    re.compile(r"minimum\s+(of\s+)?\d+\s+years?", re.IGNORECASE),
+    re.compile(r"at\s+least\s+\d+\s+years?", re.IGNORECASE),
+]
+
+# Домени відомих ATS-платформ — сигнал, що резюме на цю вакансію, ймовірно,
+# спершу читає автоматичний парсер на сервері роботодавця, а не людина.
+# Груба евристика за URL форми подачі, а не аналіз тексту опису; список не
+# претендує на повноту. Це лише підказка в колонці аналізу для ручного
+# рішення ATS/CANVA — саму колонку CANVA код і далі не чіпає автоматично.
+ATS_DOMAINS = {
+    "greenhouse.io": "Greenhouse",
+    "lever.co": "Lever",
+    "myworkdayjobs.com": "Workday",
+    "workday.com": "Workday",
+    "icims.com": "iCIMS",
+    "taleo.net": "Taleo",
+    "bamboohr.com": "BambooHR",
+    "smartrecruiters.com": "SmartRecruiters",
+    "jobvite.com": "Jobvite",
+    "ashbyhq.com": "Ashby",
+    "breezy.hr": "Breezy",
+    "recruitee.com": "Recruitee",
+    "teamtailor.com": "Teamtailor",
+    "workable.com": "Workable",
+    "successfactors.com": "SAP SuccessFactors",
+}
+
+
+def detect_ats_platform(url: str) -> str:
+    """
+    Перевіряє домен посилання на вакансію на збіг з відомою ATS-
+    платформою. Не аналізує текст опису — лише URL форми подачі.
+    Повертає назву платформи або "", якщо збігу немає (це не означає,
+    що ATS точно немає — просто цей URL не входить до переліку відомих).
+    """
+    if not url:
+        return ""
+    netloc = urllib.parse.urlparse(url).netloc.lower()
+    for domain, name in ATS_DOMAINS.items():
+        if netloc == domain or netloc.endswith("." + domain):
+            return name
+    return ""
+
+
 def requires_experience(text: str) -> bool:
     """
     Чи згадує опис вакансії мінімальну вимогу досвіду роботи (наприклад

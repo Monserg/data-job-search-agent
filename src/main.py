@@ -14,6 +14,7 @@ import datetime
 import logging
 import re
 import sys
+import urllib.parse
 
 from config_loader import load_config
 from dedup import load_seen, save_seen, filter_new_jobs
@@ -46,6 +47,45 @@ EXPERIENCE_REQUIRED_PATTERNS = [
     re.compile(r"minimum\s+(of\s+)?\d+\s+years?", re.IGNORECASE),
     re.compile(r"at\s+least\s+\d+\s+years?", re.IGNORECASE),
 ]
+
+# Домени відомих ATS-платформ — сигнал, що резюме на цю вакансію, ймовірно,
+# спершу читає автоматичний парсер на сервері роботодавця, а не людина.
+# Груба евристика за URL форми подачі, а не аналіз тексту опису; список не
+# претендує на повноту. Це лише підказка в колонці аналізу для ручного
+# рішення ATS/CANVA — саму колонку CANVA код і далі не чіпає автоматично.
+ATS_DOMAINS = {
+    "greenhouse.io": "Greenhouse",
+    "lever.co": "Lever",
+    "myworkdayjobs.com": "Workday",
+    "workday.com": "Workday",
+    "icims.com": "iCIMS",
+    "taleo.net": "Taleo",
+    "bamboohr.com": "BambooHR",
+    "smartrecruiters.com": "SmartRecruiters",
+    "jobvite.com": "Jobvite",
+    "ashbyhq.com": "Ashby",
+    "breezy.hr": "Breezy",
+    "recruitee.com": "Recruitee",
+    "teamtailor.com": "Teamtailor",
+    "workable.com": "Workable",
+    "successfactors.com": "SAP SuccessFactors",
+}
+
+
+def detect_ats_platform(url: str) -> str:
+    """
+    Перевіряє домен посилання на вакансію на збіг з відомою ATS-
+    платформою. Не аналізує текст опису — лише URL форми подачі.
+    Повертає назву платформи або "", якщо збігу немає (це не означає,
+    що ATS точно немає — просто цей URL не входить до переліку відомих).
+    """
+    if not url:
+        return ""
+    netloc = urllib.parse.urlparse(url).netloc.lower()
+    for domain, name in ATS_DOMAINS.items():
+        if netloc == domain or netloc.endswith("." + domain):
+            return name
+    return ""
 
 
 def requires_experience(text: str) -> bool:
@@ -158,6 +198,10 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
         # має бути остаточним фільтром для звіту.
         if score < min_score:
             continue
+
+        ats_platform = detect_ats_platform(job.get("url", ""))
+        if ats_platform:
+            reason = f"{reason} | Ймовірно ATS: {ats_platform}"
 
         job["match_score"] = score
         job["best_resume"] = best_resume or "—"

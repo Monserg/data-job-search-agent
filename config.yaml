@@ -66,6 +66,8 @@ sources:
 exclude_keywords:
   - "deftech"
   - "військовослужбовець"
+  - "ЗСУ"
+  - "мобілізація"
 
 # Google Sheets, куди пишеться таблиця (колонки A-K; L "Виконано" — вручну)
 google_sheets:

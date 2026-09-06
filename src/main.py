@@ -12,6 +12,7 @@
 """
 import datetime
 import logging
+import re
 import sys
 
 from config_loader import load_config
@@ -31,6 +32,31 @@ logger = logging.getLogger("job_agent.main")
 # жодне ключове слово з жодного ярусу не знайдено в тексті вакансії (не мало
 # б траплятись, бо вакансія вже пройшла keyword-фільтр на етапі скрапінгу).
 TIER_LABELS = {1: "Швидкий дохід (iOS)", 2: "Стабільна робота", 3: "Стратегічна ціль (AI/ML)", 99: "—"}
+
+# Тільки для Tier 2/3 (Tier 1/iOS — без обмежень за досвідом, там досвід є).
+# Груба текстова евристика, а не семантичне розуміння — ловить найпоширеніші
+# формулювання вимоги мінімального досвіду, але не гарантує 100% покриття
+# нестандартних фраз. Час від часу варто вручну перевіряти результат.
+EXPERIENCE_REQUIRED_PATTERNS = [
+    re.compile(r"досвід\s+роботи?\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"досвід\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"\d+\+?\s*(рік|роки|років)\s+досвіду", re.IGNORECASE),
+    re.compile(r"стаж\s+роботи?\s+від\s+\d+", re.IGNORECASE),
+    re.compile(r"\d+\+?\s*years?\s+(of\s+)?experience", re.IGNORECASE),
+    re.compile(r"minimum\s+(of\s+)?\d+\s+years?", re.IGNORECASE),
+    re.compile(r"at\s+least\s+\d+\s+years?", re.IGNORECASE),
+]
+
+
+def requires_experience(text: str) -> bool:
+    """
+    Чи згадує опис вакансії мінімальну вимогу досвіду роботи (наприклад
+    "досвід роботи від 1 року", "2+ years of experience"). Застосовується
+    лише до Tier 2/3 — там шукаємо вакансії саме БЕЗ вимог до досвіду.
+    """
+    if not text:
+        return False
+    return any(p.search(text) for p in EXPERIENCE_REQUIRED_PATTERNS)
 
 
 def flatten_keywords(keywords_cfg: dict) -> list:
@@ -110,6 +136,10 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
         if score < min_score:
             continue
 
+        tier = determine_tier(job["text"], config["keywords"])
+        if tier in (2, 3) and requires_experience(job["text"]):
+            continue
+
         reason = build_reason(overlap)
 
         # Gemini-збагачення — лише для вакансій, що вже пройшли локальний
@@ -133,7 +163,7 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
         job["best_resume"] = best_resume or "—"
         job["reason"] = reason
         job["date_added"] = today
-        job["tier"] = determine_tier(job["text"], config["keywords"])
+        job["tier"] = tier
         enriched.append(job)
 
     # Спершу за ярусом (Tier 1 завжди зверху, незалежно від Match Score),

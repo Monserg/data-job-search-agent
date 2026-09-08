@@ -266,21 +266,50 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
     return enriched
 
 
+# Кирилична множина використовується як сигнал "не англійська" — рахуємо
+# частку латинських літер серед усіх кирилично/латинських символів тексту
+# вакансії. Це груба евристика (без NLP-бібліотек), але для розділення
+# UA/EN вакансій цього достатньо: рекламні описи майже завжди або
+# переважно кириличні, або переважно латинські, проміжних випадків мало.
+CYRILLIC_RE = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
+LATIN_RE = re.compile(r"[a-zA-Z]")
+EN_LATIN_RATIO_THRESHOLD = 0.85
+
+
+def is_english_text(text: str) -> bool:
+    """
+    Повертає True, якщо опис вакансії, ймовірно, написаний англійською
+    (латинських літер істотно більше, ніж кириличних). Порожній або
+    надто короткий текст вважається невизначеним — повертає False
+    (тобто колонка EN лишиться порожньою, як і за замовчуванням).
+    """
+    if not text:
+        return False
+    cyrillic = len(CYRILLIC_RE.findall(text))
+    latin = len(LATIN_RE.findall(text))
+    total = cyrillic + latin
+    if total < 20:  # замало літер, щоб довіряти співвідношенню
+        return False
+    return (latin / total) >= EN_LATIN_RATIO_THRESHOLD
+
+
 def jobs_to_sheet_rows(jobs: list) -> list:
     rows = []
     for job in jobs:
+        en_flag = "TRUE" if is_english_text(job.get("text", "")) else ""
         rows.append([
             job["date_added"],
             job["title"],
-            f"{job.get('company', '') or '—'} / {job['source']}",
+            job.get("company", "") or "—",   # C: Компанія — окрема колонка
+            job["source"],                    # D: Джерело — окрема колонка
             job["url"],
             job["match_score"],
             job["reason"],
             job["best_resume"],
             TIER_LABELS.get(job.get("tier"), "—"),
-            "",  # CANVA — порожньо = ATS (за замовчуванням), TRUE = CANVA
-            "",  # EN — порожньо = UA (за замовчуванням), TRUE = EN
-            "",  # На адаптацію — порожньо, заповнюється вручну галочкою
+            "",       # CANVA — порожньо = ATS (за замовчуванням), TRUE = CANVA
+            en_flag,  # EN — автовизначення за текстом вакансії, TRUE = EN
+            "",       # На адаптацію — порожньо, заповнюється вручну галочкою
         ])
     return rows
 

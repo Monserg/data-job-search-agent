@@ -66,8 +66,12 @@ sources:
 exclude_keywords:
   - "deftech"
   - "військовослужбовець"
-  - "ЗСУ"
-  - "мобілізація"
+
+# Тільки для Tier 2/3 (Tier 1/iOS — без обмежень). Виключає вакансії
+# рівня Middle/Senior — шукаємо саме позиції для входу без досвіду.
+tier23_exclude_keywords:
+  - "Middle"
+  - "Senior"
 
 # Google Sheets, куди пишеться таблиця (колонки A-K; L "Виконано" — вручну)
 google_sheets:

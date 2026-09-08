@@ -72,7 +72,9 @@ exclude_keywords:
 tier23_exclude_keywords:
   - "Middle"
   - "Senior"
-
+  - "Lead"
+  - "Head of"
+  
 # Google Sheets, куди пишеться таблиця (колонки A-K; L "Виконано" — вручну)
 google_sheets:
   spreadsheet_id: "1RYP2ub_m7sCtag-MLuZKeukyUhn9WkzvMRKnZ52jeDw"

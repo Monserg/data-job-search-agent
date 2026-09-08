@@ -41,9 +41,16 @@ TIER_LABELS = {1: "Швидкий дохід (iOS)", 2: "Стабільна ро
 EXPERIENCE_REQUIRED_PATTERNS = [
     re.compile(r"досвід\s+роботи?\s+від\s+\d+", re.IGNORECASE),
     re.compile(r"досвід\s+від\s+\d+", re.IGNORECASE),
-    re.compile(r"\d+\+?\s*(рік|роки|років)\s+досвіду", re.IGNORECASE),
+    # \d+[.,]?\d* охоплює і "1,5-3 роки досвіду" (дробову нижню межу діапазону),
+    # необов'язковий "-\d+" — верхню межу діапазону типу "1-3 роки досвіду".
+    re.compile(r"\d+[.,]?\d*\s*\+?\s*(-\s*\d+[.,]?\d*\s*)?(рік|роки|років)\s+досвіду", re.IGNORECASE),
     re.compile(r"стаж\s+роботи?\s+від\s+\d+", re.IGNORECASE),
-    re.compile(r"\d+\+?\s*years?\s+(of\s+)?experience", re.IGNORECASE),
+    # {0,2} слова між "of" і "experience" — ловить "years of commercial/
+    # professional/hands-on/relevant experience" і подібні формулювання,
+    # а не лише голе "years of experience".
+    re.compile(r"\d+\+?\s*-?\s*\d*\s*years?\s+of\s+(?:[a-zA-Z-]+\s+){0,2}experience", re.IGNORECASE),
+    # "X+ years experience" без прийменника "of" (рідше, але трапляється).
+    re.compile(r"\d+\+?\s*-?\s*\d*\s*years?\s+experience", re.IGNORECASE),
     re.compile(r"minimum\s+(of\s+)?\d+\s+years?", re.IGNORECASE),
     re.compile(r"at\s+least\s+\d+\s+years?", re.IGNORECASE),
 ]

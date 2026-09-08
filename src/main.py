@@ -129,6 +129,21 @@ def requires_experience(text: str) -> bool:
     return any(p.search(text) for p in EXPERIENCE_REQUIRED_PATTERNS)
 
 
+def matches_any_keyword(text: str, keywords: list) -> bool:
+    """
+    Перевіряє, чи міститься в тексті будь-яке слово зі списку — з межами
+    слова (word boundary), щоб "Senior" не збігався з середини іншого
+    слова, і без урахування регістру.
+    """
+    if not text or not keywords:
+        return False
+    text_low = text.lower()
+    for kw in keywords:
+        if re.search(r"\b" + re.escape(kw.lower()) + r"\b", text_low):
+            return True
+    return False
+
+
 def flatten_keywords(keywords_cfg: dict) -> list:
     """
     Об'єднує всі три яруси в один плаский список для скраперів — пошук
@@ -207,8 +222,11 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
             continue
 
         tier = determine_tier(job["text"], config["keywords"])
-        if tier in (2, 3) and requires_experience(job["text"]):
-            continue
+        if tier in (2, 3):
+            if requires_experience(job["text"]):
+                continue
+            if matches_any_keyword(job["text"], config.get("tier23_exclude_keywords", [])):
+                continue
 
         reason = build_reason(overlap)
 
@@ -249,22 +267,12 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
 
 
 def jobs_to_sheet_rows(jobs: list) -> list:
-    """
-    Формує рядки під структуру таблиці A-L:
-    A: Дата | B: Посада | C: Компанія | D: Джерело | E: Посилання (URL) |
-    F: Match Score | G: Аналіз | H: Рекомендоване CV | I: Пріоритет |
-    J: CANVA | K: EN | L: На адаптацію.
-
-    C і D — окремі колонки (раніше були одним полем "Компанія & Джерело"),
-    щоб зручніше бачити повтори по назві компанії окремо від джерела.
-    """
     rows = []
     for job in jobs:
         rows.append([
             job["date_added"],
             job["title"],
-            job.get("company", "") or "—",
-            job["source"],
+            f"{job.get('company', '') or '—'} / {job['source']}",
             job["url"],
             job["match_score"],
             job["reason"],

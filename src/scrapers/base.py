@@ -44,18 +44,25 @@ def slugify(keyword: str) -> str:
     return keyword.strip().lower().replace(" ", "-")
 
 
+def humanize_slug(slug: str) -> str:
+    """'lemberg-solutions' -> 'Lemberg Solutions'."""
+    return " ".join(part.capitalize() for part in slug.replace("_", "-").split("-") if part)
+
+
 def html_link_scrape(url: str, link_pattern, base_url: str, source_name: str,
-                      keyword: str, timeout: int = 20) -> list:
+                      keyword: str, timeout: int = 20, company_pattern=None) -> list:
     """
     Універсальний HTML-скрапер "за посиланнями": замість того, щоб
     покладатись на CSS-класи (які сайти часто змінюють і які я не можу
     перевірити наживо з пісочниці), він шукає всі <a href> що підпадають
     під regex-патерн вакансії на конкретному сайті.
 
-    Це простіше й довговічніше, але не витягує компанію/зарплату окремо —
-    лише заголовок і посилання. Якщо потрібна деталізація, відредагуй
-    відповідний файл у src/scrapers/, додавши точні CSS-селектори після
-    того, як подивишся на актуальну розмітку сторінки (F12 → Elements).
+    Це простіше й довговічніше, і НЕ витягує компанію окремим CSS-
+    селектором — але якщо сайт кодує назву компанії прямо в URL вакансії
+    (як DOU: /companies/<slug>/vacancies/<id>), можна передати
+    `company_pattern` — regex з однією групою, яка й буде slug'ом
+    компанії. Він буде "олюднений" (дефіси -> пробіли, Capitalize).
+    Якщо `company_pattern` не передано або не збігся — company = "".
     """
     import re
     import requests
@@ -83,9 +90,16 @@ def html_link_scrape(url: str, link_pattern, base_url: str, source_name: str,
         if not title or len(title) < 3:
             continue
         seen_urls.add(full_url)
+
+        company = ""
+        if company_pattern:
+            m = re.search(company_pattern, href)
+            if m:
+                company = humanize_slug(m.group(1))
+
         results.append({
             "title": title,
-            "company": "",
+            "company": company,
             "url": full_url,
             "source": source_name,
             "text": f"{title} {keyword}",

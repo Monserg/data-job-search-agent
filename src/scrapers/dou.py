@@ -1,23 +1,87 @@
 """
-DOU.ua — пошук вакансій за ключовим словом:
-https://jobs.dou.ua/vacancies/?search=<keyword>
+DOU.ua — пошук вакансій за ключовим словом, ТІЛЬКИ серед вакансій, які
+DOU сам позначає як "віддалено" (query-параметр remote=):
+https://jobs.dou.ua/vacancies/?remote=&search=<keyword>
 Посилання на вакансії: /companies/<company>/vacancies/<id>/
+
+ЗМІНА (root-cause фікс двох проблем, знайдених вручну на прикладі
+https://jobs.dou.ua/companies/l7-united/vacancies/369003/ — гібридна
+вакансія "Аналітик з кіберризиків та захисту даних", Київ, з бейджем
+"deftech" на сторінці вакансії):
+
+1) ФОРМАТ РОБОТИ (офіс/гібрид проходили у звіт, хоча пріоритет —
+   виключно віддалена робота).
+   Раніше запит ішов у загальний розділ /vacancies/?search=..., де є
+   і офісні, і гібридні, і віддалені вакансії — сам DOU ніяк це не
+   розрізняв на нашому боці. Замість того, щоб вгадувати "віддаленість"
+   за текстом (ненадійна евристика — на сторінці вакансії формат роботи
+   часто прихований у довільній фразі на кшталт "гібридний формат"),
+   тепер запит одразу йде з офіційним фільтром самого DOU — параметром
+   `remote=` (порожнє значення — це те, що реально шле сам сайт при
+   натисканні чекбокса "Віддалено" в UI; перевірено вручну: ця сама
+   вакансія L7 United НЕ потрапляє у видачу з цим параметром, а без
+   нього — потрапляє). Це фільтрація на рівні джерела, а не патч
+   поверх тексту.
+
+2) СТОП-СЛОВО "deftech" (exclude_keywords у config.yaml) не спрацьовувало.
+   Причина: `text` цього скрапера раніше складався лише з
+   {заголовок посилання зі сторінки СПИСКУ} + {ключове слово пошуку} —
+   сама сторінка списку вакансій DOU не містить бейджів/опису, вони є
+   тільки на сторінці ОКРЕМОЇ вакансії (бейдж "deftech" там — це
+   окреме посилання-тег над заголовком, підтверджено вручну на прикладі
+   вище). Тепер для кожної знайденої вакансії скрапер довантажує саму
+   сторінку вакансії (base.fetch_page_text) і додає її повний текст до
+   `text` — тож exclude_keywords, tier23_exclude_keywords,
+   requires_experience тощо в main.py тепер бачать реальний вміст
+   сторінки вакансії, а не лише заголовок посилання зі списку.
+
+Побічні ефекти:
+- Ще один HTTP-запит НА КОЖНУ ЗНАЙДЕНУ ВАКАНСІЮ (довантаження сторінки
+  вакансії) — DOU-прогін став повільнішим і залежним від доступності
+  jobs.dou.ua для кожної окремої сторінки вакансії, не лише для сторінки
+  пошуку. Один і той самий URL вакансії часто трапляється під кількома
+  ключовими словами (напр. і "data analyst", і "data quality") —
+  довантажується він лише ОДИН раз за прогін завдяки локальному кешу
+  `page_text_cache` нижче, решта звернень беруть готовий текст з кешу.
+- Помилка довантаження ОКРЕМОЇ сторінки вакансії не зупиняє весь
+  скрапер — просто для неї `text` лишається коротким (заголовок +
+  ключове слово), як і раніше (fetch_page_text ловить помилки сама і
+  повертає "").
 """
+import time
 import urllib.parse
-from .base import html_link_scrape
+from .base import html_link_scrape, fetch_page_text
 
 BASE_URL = "https://jobs.dou.ua"
 LINK_PATTERN = r"/companies/[^/]+/vacancies/\d+"
 COMPANY_PATTERN = r"/companies/([^/]+)/vacancies/\d+"
 
+# Пауза між довантаженнями окремих сторінок вакансій, щоб не бомбардувати
+# jobs.dou.ua запитами занадто швидко (ввічливий rate-limit на своєму боці).
+PAGE_FETCH_DELAY_SECONDS = 0.3
+
 
 def search(keywords: list) -> list:
     all_results = []
+    # Кеш "URL вакансії -> повний текст сторінки" в межах ОДНОГО прогону
+    # search(): та сама вакансія часто збігається з кількома ключовими
+    # словами, і без кешу довантажувалась би по кілька разів даремно.
+    page_text_cache = {}
+
     for kw in keywords:
         q = urllib.parse.quote(kw)
-        url = f"{BASE_URL}/vacancies/?search={q}"
-        all_results.extend(
-            html_link_scrape(url, LINK_PATTERN, BASE_URL, "DOU.ua", kw,
-                              company_pattern=COMPANY_PATTERN)
-        )
+        url = f"{BASE_URL}/vacancies/?remote=&search={q}"
+        results = html_link_scrape(url, LINK_PATTERN, BASE_URL, "DOU.ua", kw,
+                                    company_pattern=COMPANY_PATTERN)
+
+        for job in results:
+            job_url = job["url"]
+            if job_url not in page_text_cache:
+                page_text_cache[job_url] = fetch_page_text(job_url)
+                time.sleep(PAGE_FETCH_DELAY_SECONDS)
+            full_text = page_text_cache[job_url]
+            if full_text:
+                job["text"] = f"{job['text']} {full_text}"
+
+        all_results.extend(results)
     return all_results

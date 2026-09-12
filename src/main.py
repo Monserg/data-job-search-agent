@@ -216,6 +216,85 @@ def filter_excluded(jobs: list, exclude_keywords: list) -> list:
     ]
 
 
+# Кирилична множина використовується як сигнал "не англійська" — рахуємо
+# частку латинських літер серед усіх кирилично/латинських символів тексту
+# вакансії. Це груба евристика (без NLP-бібліотек), але для розділення
+# UA/EN вакансій цього достатньо: рекламні описи майже завжди або
+# переважно кириличні, або переважно латинські, проміжних випадків мало.
+#
+# Винесено ВИЩЕ за enrich_with_matching (раніше було нижче в файлі), бо
+# тепер ця функція викликається і всередині enrich_with_matching для
+# нового правила мовного пріоритету (apply_language_preference) — так
+# читачу файлу одразу видно залежність, а не лише "працює завдяки
+# пізньому зв'язуванню імен у Python".
+CYRILLIC_RE = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
+LATIN_RE = re.compile(r"[a-zA-Z]")
+EN_LATIN_RATIO_THRESHOLD = 0.85
+
+
+def is_english_text(text: str) -> bool:
+    """
+    Повертає True, якщо опис вакансії, ймовірно, написаний англійською
+    (латинських літер істотно більше, ніж кириличних). Порожній або
+    надто короткий текст вважається невизначеним — повертає False
+    (тобто колонка EN лишиться порожньою, як і за замовчуванням).
+    """
+    if not text:
+        return False
+    cyrillic = len(CYRILLIC_RE.findall(text))
+    latin = len(LATIN_RE.findall(text))
+    total = cyrillic + latin
+    if total < 20:  # замало літер, щоб довіряти співвідношенню
+        return False
+    return (latin / total) >= EN_LATIN_RATIO_THRESHOLD
+
+
+def apply_language_preference(resume_name: str, is_english: bool, resumes: dict) -> str:
+    """
+    НОВЕ ПРАВИЛО (за запитом користувача): мова рекомендованого резюме
+    (колонка "Рекомендоване CV") повинна відповідати мові вакансії
+    (колонка "EN"), навіть якщо чисто текстовий Match Score вибрав
+    відповідник іншою мовою.
+
+    - Якщо вакансія англомовна (is_english=True), а найкраще резюме за
+      Match Score має "_UA" у назві файлу — підміняємо на файл з такою
+      самою базовою назвою, але "_EN" замість "_UA".
+    - І навпаки: якщо вакансія україномовна (is_english=False), а
+      резюме має "_EN" у назві — підміняємо на відповідник з "_UA".
+
+    Підміна суто текстова (заміна підрядка в імені файлу), БЕЗ повторного
+    перерахунку Match Score для мовного відповідника — свідомий
+    компроміс: UA/EN-версії одного резюме мають однаковий зміст (це
+    переклад одна одної), тож мова вакансії важливіша за нюанси
+    відсоткового збігу слів.
+
+    Підміна відбувається, лише якщо файл-відповідник дійсно є серед
+    завантажених з Google Drive резюме (`resumes`) — інакше функція
+    повертає оригінальну назву без змін, щоб не посилатись на
+    неіснуючий файл (наприклад, якщо для якогось напряму резюме має
+    лише одну мовну версію).
+    """
+    if not resume_name:
+        return resume_name
+
+    if is_english and "_UA" in resume_name:
+        candidate = resume_name.replace("_UA", "_EN")
+    elif not is_english and "_EN" in resume_name:
+        candidate = resume_name.replace("_EN", "_UA")
+    else:
+        return resume_name
+
+    if candidate in resumes:
+        return candidate
+
+    logger.info(
+        "Мовний пріоритет: хотів підмінити '%s' -> '%s', але такого файлу "
+        "немає серед завантажених резюме — лишаю оригінал.",
+        resume_name, candidate,
+    )
+    return resume_name
+
+
 def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
     min_score = config["matching"]["min_score_to_report"]
     use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured()
@@ -234,6 +313,14 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
                 continue
             if matches_any_keyword(job["text"], config.get("tier23_exclude_keywords", [])):
                 continue
+
+        # Мовний пріоритет застосовується ОДРАЗУ після вибору найкращого
+        # резюме за Match Score і ДО виклику Gemini — так Gemini також
+        # аналізує саме мовно-правильний варіант резюме, а не той, що
+        # випадково переміг за текстовим збігом слів.
+        job_is_english = is_english_text(job["text"])
+        if best_resume:
+            best_resume = apply_language_preference(best_resume, job_is_english, resumes)
 
         reason = build_reason(overlap)
 
@@ -265,6 +352,7 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
         job["reason"] = reason
         job["date_added"] = today
         job["tier"] = tier
+        job["is_english"] = job_is_english
         enriched.append(job)
 
     # Спершу за ярусом (Tier 1 завжди зверху, незалежно від Match Score),
@@ -273,37 +361,14 @@ def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
     return enriched
 
 
-# Кирилична множина використовується як сигнал "не англійська" — рахуємо
-# частку латинських літер серед усіх кирилично/латинських символів тексту
-# вакансії. Це груба евристика (без NLP-бібліотек), але для розділення
-# UA/EN вакансій цього достатньо: рекламні описи майже завжди або
-# переважно кириличні, або переважно латинські, проміжних випадків мало.
-CYRILLIC_RE = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
-LATIN_RE = re.compile(r"[a-zA-Z]")
-EN_LATIN_RATIO_THRESHOLD = 0.85
-
-
-def is_english_text(text: str) -> bool:
-    """
-    Повертає True, якщо опис вакансії, ймовірно, написаний англійською
-    (латинських літер істотно більше, ніж кириличних). Порожній або
-    надто короткий текст вважається невизначеним — повертає False
-    (тобто колонка EN лишиться порожньою, як і за замовчуванням).
-    """
-    if not text:
-        return False
-    cyrillic = len(CYRILLIC_RE.findall(text))
-    latin = len(LATIN_RE.findall(text))
-    total = cyrillic + latin
-    if total < 20:  # замало літер, щоб довіряти співвідношенню
-        return False
-    return (latin / total) >= EN_LATIN_RATIO_THRESHOLD
-
-
 def jobs_to_sheet_rows(jobs: list) -> list:
     rows = []
     for job in jobs:
-        en_flag = "TRUE" if is_english_text(job.get("text", "")) else ""
+        # is_english вже порахований і застосований в enrich_with_matching
+        # (job["is_english"]) — використовуємо той самий прапорець, щоб
+        # колонка EN і колонка "Рекомендоване CV" завжди узгоджувались
+        # між собою, а не рахувались двома окремими викликами.
+        en_flag = "TRUE" if job.get("is_english") else ""
         rows.append([
             job["date_added"],
             job["title"],

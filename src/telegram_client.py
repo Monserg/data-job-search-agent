@@ -14,12 +14,6 @@ import requests
 
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
-TIER_EMOJI = {
-    1: "🥇 Швидкий дохід",
-    2: "🥈 Стабільна робота",
-    3: "🥉 Стратегічна ціль",
-}
-
 # Пауза між повідомленнями, щоб не впертись у Telegram flood control
 # (офіційний ліміт — ~30 повідомлень/сек в різні чати, але для одного
 # чату безпечніше йти повільніше).
@@ -33,27 +27,19 @@ def _esc(text: str) -> str:
 
 def build_job_message(job: dict) -> str:
     """
-    Формує одне повідомлення-картку для однієї вакансії, у стилі:
-    жирний заголовок + компанія, іконки для полів, посилання внизу.
+    Формує одне повідомлення-картку для однієї вакансії — сирі дані,
+    без жодної оцінки відповідності (матчинг прибрано 2026-09-20).
     """
     title = _esc(job.get("title", "Без назви"))
     company = _esc(job.get("company") or "—")
     source = _esc(job.get("source", ""))
-    score = job.get("match_score", 0)
-    reason = _esc(job.get("reason", ""))
     url = job.get("url", "")
-    tier_label = TIER_EMOJI.get(job.get("tier"))
 
-    lines = []
-    if tier_label:
-        lines.append(f"<b>{tier_label}</b>")
-    lines += [
+    lines = [
         f"📌 <b>{title}</b> в {company}",
         "",
-        f"🎯 <b>Match Score:</b> {score}%",
+        f"🌍 <b>Джерело:</b> {source}",
     ]
-    if reason:
-        lines.append(f"💬 {reason}")
 
     lines.append("")
     if url:
@@ -69,7 +55,7 @@ def build_job_message(job: dict) -> str:
 def send_job_cards(jobs: list) -> None:
     """
     Надсилає по одному повідомленню на кожну вакансію зі списку jobs
-    (вже відсортованого спершу за ярусом, потім за match_score, як формує main.py).
+    (відсортованого за джерелом+назвою, як формує main.py).
     Якщо jobs порожній — надсилає одне коротке "нічого не знайдено".
     """
     token = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -80,21 +66,7 @@ def send_job_cards(jobs: list) -> None:
         _send_single(url, chat_id, "📭 Сьогодні нових вакансій за твоїми ключовими словами не знайдено.")
         return
 
-    tier_counts = {1: 0, 2: 0, 3: 0}
-    for job in jobs:
-        t = job.get("tier")
-        if t in tier_counts:
-            tier_counts[t] += 1
-    breakdown = (
-        f"🥇 Швидкий дохід: {tier_counts[1]}  "
-        f"🥈 Стабільна робота: {tier_counts[2]}  "
-        f"🥉 Стратегічна ціль: {tier_counts[3]}"
-    )
-
-    _send_single(
-        url, chat_id,
-        f"📋 <b>Нові вакансії на сьогодні: {len(jobs)}</b>\n{breakdown}",
-    )
+    _send_single(url, chat_id, f"📋 <b>Нові вакансії на сьогодні: {len(jobs)}</b>")
     time.sleep(SEND_DELAY_SECONDS)
 
     for job in jobs:

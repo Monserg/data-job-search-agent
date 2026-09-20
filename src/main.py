@@ -2,184 +2,37 @@
 Точка входу. Викликається щоранку GitHub Actions'ом (9:00-10:00 Kyiv).
 
 Порядок дій:
-1. Завантажити конфіг і резюме з Google Drive.
-2. Опитати всі увімкнені джерела вакансій за ключовими словами.
+1. Завантажити конфіг.
+2. Опитати всі увімкнені джерела вакансій за AI-запитами, відкинувши
+   вакансії, що підпадають під exclude_keywords (сеньйорність тощо).
 3. Прибрати дублікати (порівняно з попередніми запусками).
-4. Порахувати Match Score / найкраще резюме для кожної нової вакансії.
-5. Дописати рядки у Google Sheets.
-6. Надіслати картки в Telegram.
-7. Зберегти оновлений список "вже бачених" вакансій.
+4. Дописати рядки у Google Sheets.
+5. Надіслати картки в Telegram.
+6. Зберегти оновлений список "вже бачених" вакансій.
+
+ПРИМІТКА: розрахунок Match Score / рекомендація резюме / Gemini-аналіз
+навмисно прибрані (2026-09-20) — визнано, що вони давали недостовірну
+картину. Звіт тепер — сирий список вакансій без жодної оцінки
+відповідності.
 """
 import datetime
 import logging
-import re
 import sys
-import urllib.parse
 
 from config_loader import load_config
 from dedup import load_seen, save_seen, filter_new_jobs
-from resume_matcher import best_resume_for_job, build_reason
 from scrapers import REGISTRY
-from scrapers.base import safe_call
-import drive_client
+from scrapers.base import safe_call, is_excluded
 import sheets_client
 import telegram_client
-import gemini_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("job_agent.main")
 
-# Мітки ярусів для колонки в Google Sheets. 99 — теоретичний випадок, коли
-# жодне ключове слово з жодного ярусу не знайдено в тексті вакансії (не мало
-# б траплятись, бо вакансія вже пройшла keyword-фільтр на етапі скрапінгу).
-TIER_LABELS = {1: "Швидкий дохід (iOS)", 2: "Стабільна робота", 3: "Стратегічна ціль (AI/ML)", 99: "—"}
-
-# Тільки для Tier 2/3 (Tier 1/iOS — без обмежень за досвідом, там досвід є).
-# Груба текстова евристика, а не семантичне розуміння — ловить найпоширеніші
-# формулювання вимоги мінімального досвіду, але не гарантує 100% покриття
-# нестандартних фраз. Час від часу варто вручну перевіряти результат.
-EXPERIENCE_REQUIRED_PATTERNS = [
-    re.compile(r"досвід\s+роботи?\s+від\s+\d+", re.IGNORECASE),
-    re.compile(r"досвід\s+від\s+\d+", re.IGNORECASE),
-    # \d+[.,]?\d* охоплює і "1,5-3 роки досвіду" (дробову нижню межу діапазону),
-    # необов'язковий "-\d+" — верхню межу діапазону типу "1-3 роки досвіду".
-    re.compile(r"\d+[.,]?\d*\s*\+?\s*(-\s*\d+[.,]?\d*\s*)?(рік|роки|років)\s+досвіду", re.IGNORECASE),
-    re.compile(r"стаж\s+роботи?\s+від\s+\d+", re.IGNORECASE),
-    # {0,2} слова між "of" і "experience" — ловить "years of commercial/
-    # professional/hands-on/relevant experience" і подібні формулювання,
-    # а не лише голе "years of experience".
-    re.compile(r"\d+\+?\s*-?\s*\d*\s*years?\s+of\s+(?:[a-zA-Z-]+\s+){0,2}experience", re.IGNORECASE),
-    # "X+ years experience" без прийменника "of" (рідше, але трапляється).
-    re.compile(r"\d+\+?\s*-?\s*\d*\s*years?\s+experience", re.IGNORECASE),
-    re.compile(r"minimum\s+(of\s+)?\d+\s+years?", re.IGNORECASE),
-    re.compile(r"at\s+least\s+\d+\s+years?", re.IGNORECASE),
-]
-
-# Домени відомих ATS-платформ — сигнал, що резюме на цю вакансію, ймовірно,
-# спершу читає автоматичний парсер на сервері роботодавця, а не людина.
-# Груба евристика за URL форми подачі, а не аналіз тексту опису; список не
-# претендує на повноту. Це лише підказка в колонці аналізу для ручного
-# рішення ATS/CANVA — саму колонку CANVA код і далі не чіпає автоматично.
-ATS_DOMAINS = {
-    "greenhouse.io": "Greenhouse",
-    "lever.co": "Lever",
-    "myworkdayjobs.com": "Workday",
-    "workday.com": "Workday",
-    "icims.com": "iCIMS",
-    "taleo.net": "Taleo",
-    "bamboohr.com": "BambooHR",
-    "smartrecruiters.com": "SmartRecruiters",
-    "jobvite.com": "Jobvite",
-    "ashbyhq.com": "Ashby",
-    "breezy.hr": "Breezy",
-    "recruitee.com": "Recruitee",
-    "teamtailor.com": "Teamtailor",
-    "workable.com": "Workable",
-    "successfactors.com": "SAP SuccessFactors",
-}
-
-
-def detect_ats_platform(url: str) -> str:
-    """
-    Перевіряє домен посилання на вакансію на збіг з відомою ATS-
-    платформою. Не аналізує текст опису — лише URL форми подачі.
-    Повертає назву платформи або "", якщо збігу немає (це не означає,
-    що ATS точно немає — просто цей URL не входить до переліку відомих).
-    """
-    if not url:
-        return ""
-    netloc = urllib.parse.urlparse(url).netloc.lower()
-    for domain, name in ATS_DOMAINS.items():
-        if netloc == domain or netloc.endswith("." + domain):
-            return name
-    return ""
-
-
-# Текстові сигнали ATS для випадків, коли URL не входить у ATS_DOMAINS —
-# типово для українських джоб-бордів (Djinni, DOU, Work.ua), де посилання
-# на вакансію веде на сам джоб-борд, а не на кінцеву форму подачі. Тут
-# ловимо формулювання в описі, що натякають на формальний процес подачі
-# через портал/форму, а не пряме звернення до людини. Це так само груба
-# евристика, як і requires_experience — не гарантує повного покриття.
-ATS_TEXT_PATTERNS = [
-    re.compile(r"запо?вн[іи]ть\s+форм", re.IGNORECASE),
-    re.compile(r"careers?\s+portal", re.IGNORECASE),
-    re.compile(r"recruit(ing|ment)\s+platform", re.IGNORECASE),
-    re.compile(r"система\s+відбору\s+кандидатів", re.IGNORECASE),
-    re.compile(r"apply\s+via\s+our", re.IGNORECASE),
-    re.compile(r"apply\s+through\s+our", re.IGNORECASE),
-    re.compile(r"applicant\s+tracking\s+system", re.IGNORECASE),
-    re.compile(r"пройдіть\s+за\s+посиланням.{0,40}(форм|анкет)", re.IGNORECASE),
-]
-
-
-def detect_ats_text_signal(text: str) -> bool:
-    """
-    Чи містить опис вакансії текстові ознаки формального ATS-процесу
-    подачі (форма/портал), на відміну від прямого звернення до людини
-    (email, Telegram, "напишіть рекрутеру"). Доповнює detect_ats_platform
-    для джерел, де URL нічого не каже (переважно українські джоб-борди).
-    """
-    if not text:
-        return False
-    return any(p.search(text) for p in ATS_TEXT_PATTERNS)
-
-
-def requires_experience(text: str) -> bool:
-    """
-    Чи згадує опис вакансії мінімальну вимогу досвіду роботи (наприклад
-    "досвід роботи від 1 року", "2+ years of experience"). Застосовується
-    лише до Tier 2/3 — там шукаємо вакансії саме БЕЗ вимог до досвіду.
-    """
-    if not text:
-        return False
-    return any(p.search(text) for p in EXPERIENCE_REQUIRED_PATTERNS)
-
-
-def matches_any_keyword(text: str, keywords: list) -> bool:
-    """
-    Перевіряє, чи міститься в тексті будь-яке слово зі списку — з межами
-    слова (word boundary), щоб "Senior" не збігався з середини іншого
-    слова, і без урахування регістру.
-    """
-    if not text or not keywords:
-        return False
-    text_low = text.lower()
-    for kw in keywords:
-        if re.search(r"\b" + re.escape(kw.lower()) + r"\b", text_low):
-            return True
-    return False
-
-
-def flatten_keywords(keywords_cfg: dict) -> list:
-    """
-    Об'єднує всі три яруси в один плаский список для скраперів — пошук
-    навмисно НЕ звужується, ярусність впливає лише на сортування звіту,
-    а не на те, які вакансії потрапляють у видачу.
-    """
-    flat = []
-    for tier_name in ("tier1", "tier2", "tier3"):
-        flat.extend(keywords_cfg.get(tier_name, []))
-    return flat
-
-
-def determine_tier(text: str, keywords_cfg: dict) -> int:
-    """
-    Повертає номер найвищого пріоритету (найменший номер ярусу), чиє
-    ключове слово зустрічається в тексті вакансії. Перевіряє Tier 1 →
-    Tier 2 → Tier 3 по черзі, тож якщо вакансія збігається і з Tier 1,
-    і з Tier 3 — вона все одно піде як Tier 1.
-    """
-    text_low = (text or "").lower()
-    for tier_num, tier_name in ((1, "tier1"), (2, "tier2"), (3, "tier3")):
-        for kw in keywords_cfg.get(tier_name, []):
-            if kw.lower() in text_low:
-                return tier_num
-    return 99
-
 
 def collect_jobs(config: dict) -> list:
-    keywords = flatten_keywords(config["keywords"])
+    queries = config["search"]["queries"]
+    exclude_keywords = config.get("filters", {}).get("exclude_keywords", [])
     all_jobs = []
 
     for name, module in REGISTRY.items():
@@ -189,199 +42,43 @@ def collect_jobs(config: dict) -> list:
 
         logger.info("Опитую джерело: %s", name)
         if name == "linkedin_alerts":
-            jobs = safe_call(module.search, keywords, source_cfg.get("feed_urls", []))
+            jobs = safe_call(module.search, queries, source_cfg.get("feed_urls", []))
         else:
-            jobs = safe_call(module.search, keywords)
+            jobs = safe_call(module.search, queries)
 
-        logger.info("  -> знайдено %d вакансій", len(jobs))
+        before = len(jobs)
+        jobs = [j for j in jobs if not is_excluded(j["text"], exclude_keywords)]
+        excluded_count = before - len(jobs)
+
+        logger.info("  -> знайдено %d вакансій%s", len(jobs),
+                     f" (ще {excluded_count} відкинуто фільтром exclude_keywords)" if excluded_count else "")
         all_jobs.extend(jobs)
 
     return all_jobs
 
 
-def filter_excluded(jobs: list, exclude_keywords: list) -> list:
-    """
-    Прибирає вакансії, що містять будь-яке зі стоп-слів (наприклад
-    "deftech") у заголовку чи описі — повністю, незалежно від ярусу
-    чи Match Score. Виключені вакансії не потрапляють навіть у
-    data/seen_jobs.json, тож якщо стоп-слово пізніше прибрати з конфіга,
-    ці ж вакансії зможуть з'явитись у звіті знову.
-    """
-    if not exclude_keywords:
-        return jobs
-    exclude_low = [kw.lower() for kw in exclude_keywords]
-    return [
-        job for job in jobs
-        if not any(kw in (job.get("text") or "").lower() for kw in exclude_low)
-    ]
-
-
-# Кирилична множина використовується як сигнал "не англійська" — рахуємо
-# частку латинських літер серед усіх кирилично/латинських символів тексту
-# вакансії. Це груба евристика (без NLP-бібліотек), але для розділення
-# UA/EN вакансій цього достатньо: рекламні описи майже завжди або
-# переважно кириличні, або переважно латинські, проміжних випадків мало.
-#
-# Винесено ВИЩЕ за enrich_with_matching (раніше було нижче в файлі), бо
-# тепер ця функція викликається і всередині enrich_with_matching для
-# нового правила мовного пріоритету (apply_language_preference) — так
-# читачу файлу одразу видно залежність, а не лише "працює завдяки
-# пізньому зв'язуванню імен у Python".
-CYRILLIC_RE = re.compile(r"[а-яА-ЯіІїЇєЄґҐ]")
-LATIN_RE = re.compile(r"[a-zA-Z]")
-EN_LATIN_RATIO_THRESHOLD = 0.85
-
-
-def is_english_text(text: str) -> bool:
-    """
-    Повертає True, якщо опис вакансії, ймовірно, написаний англійською
-    (латинських літер істотно більше, ніж кириличних). Порожній або
-    надто короткий текст вважається невизначеним — повертає False
-    (тобто колонка EN лишиться порожньою, як і за замовчуванням).
-    """
-    if not text:
-        return False
-    cyrillic = len(CYRILLIC_RE.findall(text))
-    latin = len(LATIN_RE.findall(text))
-    total = cyrillic + latin
-    if total < 20:  # замало літер, щоб довіряти співвідношенню
-        return False
-    return (latin / total) >= EN_LATIN_RATIO_THRESHOLD
-
-
-def apply_language_preference(resume_name: str, is_english: bool, resumes: dict) -> str:
-    """
-    НОВЕ ПРАВИЛО (за запитом користувача): мова рекомендованого резюме
-    (колонка "Рекомендоване CV") повинна відповідати мові вакансії
-    (колонка "EN"), навіть якщо чисто текстовий Match Score вибрав
-    відповідник іншою мовою.
-
-    - Якщо вакансія англомовна (is_english=True), а найкраще резюме за
-      Match Score має "_UA" у назві файлу — підміняємо на файл з такою
-      самою базовою назвою, але "_EN" замість "_UA".
-    - І навпаки: якщо вакансія україномовна (is_english=False), а
-      резюме має "_EN" у назві — підміняємо на відповідник з "_UA".
-
-    Підміна суто текстова (заміна підрядка в імені файлу), БЕЗ повторного
-    перерахунку Match Score для мовного відповідника — свідомий
-    компроміс: UA/EN-версії одного резюме мають однаковий зміст (це
-    переклад одна одної), тож мова вакансії важливіша за нюанси
-    відсоткового збігу слів.
-
-    Підміна відбувається, лише якщо файл-відповідник дійсно є серед
-    завантажених з Google Drive резюме (`resumes`) — інакше функція
-    повертає оригінальну назву без змін, щоб не посилатись на
-    неіснуючий файл (наприклад, якщо для якогось напряму резюме має
-    лише одну мовну версію).
-    """
-    if not resume_name:
-        return resume_name
-
-    if is_english and "_UA" in resume_name:
-        candidate = resume_name.replace("_UA", "_EN")
-    elif not is_english and "_EN" in resume_name:
-        candidate = resume_name.replace("_EN", "_UA")
-    else:
-        return resume_name
-
-    if candidate in resumes:
-        return candidate
-
-    logger.info(
-        "Мовний пріоритет: хотів підмінити '%s' -> '%s', але такого файлу "
-        "немає серед завантажених резюме — лишаю оригінал.",
-        resume_name, candidate,
-    )
-    return resume_name
-
-
-def enrich_with_matching(jobs: list, resumes: dict, config: dict) -> list:
-    min_score = config["matching"]["min_score_to_report"]
-    use_gemini = config["matching"].get("use_gemini_enrichment") and gemini_client.is_configured()
-    gemini_model = config["matching"].get("gemini_model", "gemini-3.5-flash")
-
+def finalize_jobs(jobs: list) -> list:
+    """Додає дату і сортує за джерелом+назвою (без жодного скорингу)."""
     today = datetime.date.today().isoformat()
-    enriched = []
     for job in jobs:
-        best_resume, score, overlap = best_resume_for_job(job["text"], resumes)
-        if score < min_score:
-            continue
-
-        tier = determine_tier(job["text"], config["keywords"])
-        if tier in (2, 3):
-            if requires_experience(job["text"]):
-                continue
-            if matches_any_keyword(job["text"], config.get("tier23_exclude_keywords", [])):
-                continue
-
-        # Мовний пріоритет застосовується ОДРАЗУ після вибору найкращого
-        # резюме за Match Score і ДО виклику Gemini — так Gemini також
-        # аналізує саме мовно-правильний варіант резюме, а не той, що
-        # випадково переміг за текстовим збігом слів.
-        job_is_english = is_english_text(job["text"])
-        if best_resume:
-            best_resume = apply_language_preference(best_resume, job_is_english, resumes)
-
-        reason = build_reason(overlap)
-
-        # Gemini-збагачення — лише для вакансій, що вже пройшли локальний
-        # поріг, щоб не витрачати денний ліміт безкоштовного тарифу даремно.
-        if use_gemini and best_resume:
-            gemini_result = safe_call(
-                gemini_client.analyze_fit,
-                job["text"], resumes[best_resume], best_resume, gemini_model,
-            )
-            if gemini_result and gemini_result.get("reason"):
-                score = gemini_result["score"]
-                reason = f"{gemini_result['reason']} (Gemini AI)"
-
-        # Повторна перевірка порогу вже після Gemini — його семантична
-        # оцінка часто нижча за грубий локальний збіг слів, і саме вона
-        # має бути остаточним фільтром для звіту.
-        if score < min_score:
-            continue
-
-        ats_platform = detect_ats_platform(job.get("url", ""))
-        if ats_platform:
-            reason = f"{reason} | Ймовірно ATS: {ats_platform}"
-        elif detect_ats_text_signal(job["text"]):
-            reason = f"{reason} | Ймовірно ATS (текстові ознаки)"
-
-        job["match_score"] = score
-        job["best_resume"] = best_resume or "—"
-        job["reason"] = reason
         job["date_added"] = today
-        job["tier"] = tier
-        job["is_english"] = job_is_english
-        enriched.append(job)
-
-    # Спершу за ярусом (Tier 1 завжди зверху, незалежно від Match Score),
-    # усередині одного ярусу — за Match Score, як і раніше.
-    enriched.sort(key=lambda j: (j["tier"], -j["match_score"]))
-    return enriched
+    jobs.sort(key=lambda j: (j["source"], j["title"]))
+    return jobs
 
 
 def jobs_to_sheet_rows(jobs: list) -> list:
+    """Порядок колонок відповідає реальній структурі трекера:
+    A Дата додавання, B Посада/Вакансія, C Компанія, D Джерело,
+    E Посилання (URL). Колонки F-J (CANVA/EN/На адаптацію/Виконано/
+    Feedback) заповнюються вручну і цим кодом не чіпаються."""
     rows = []
     for job in jobs:
-        # is_english вже порахований і застосований в enrich_with_matching
-        # (job["is_english"]) — використовуємо той самий прапорець, щоб
-        # колонка EN і колонка "Рекомендоване CV" завжди узгоджувались
-        # між собою, а не рахувались двома окремими викликами.
-        en_flag = "TRUE" if job.get("is_english") else ""
         rows.append([
             job["date_added"],
             job["title"],
-            job.get("company", "") or "—",   # C: Компанія — окрема колонка
-            job["source"],                    # D: Джерело — окрема колонка
+            job.get("company", "") or "—",
+            job["source"],
             job["url"],
-            job["match_score"],
-            job["reason"],
-            job["best_resume"],
-            TIER_LABELS.get(job.get("tier"), "—"),
-            "",       # CANVA — порожньо = ATS (за замовчуванням), TRUE = CANVA
-            en_flag,  # EN — автовизначення за текстом вакансії, TRUE = EN
-            "",       # На адаптацію — порожньо, заповнюється вручну галочкою
         ])
     return rows
 
@@ -389,32 +86,16 @@ def jobs_to_sheet_rows(jobs: list) -> list:
 def main() -> int:
     config = load_config()
 
-    logger.info("Завантажую резюме з Google Drive...")
-    try:
-        resumes = drive_client.load_resumes(config["google_drive"]["resumes_folder_id"])
-        logger.info("Завантажено %d резюме", len(resumes))
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Не вдалось завантажити резюме: %s", exc)
-        return 1
-
-    if not resumes:
-        logger.error("У папці Drive немає жодного .pdf резюме — зупиняюсь.")
-        return 1
-
     raw_jobs = collect_jobs(config)
     logger.info("Всього знайдено %d вакансій (з усіх джерел, до дедублікації)", len(raw_jobs))
-
-    raw_jobs = filter_excluded(raw_jobs, config.get("exclude_keywords", []))
-    logger.info("Після виключень (стоп-слова): залишилось %d", len(raw_jobs))
 
     seen_ids = load_seen()
     new_jobs, updated_seen = filter_new_jobs(raw_jobs, seen_ids)
     logger.info("З них нових (раніше не звітованих): %d", len(new_jobs))
 
-    matched_jobs = enrich_with_matching(new_jobs, resumes, config)
-    logger.info("Пройшли поріг Match Score: %d", len(matched_jobs))
+    final_jobs = finalize_jobs(new_jobs)
 
-    rows = jobs_to_sheet_rows(matched_jobs)
+    rows = jobs_to_sheet_rows(final_jobs)
     try:
         sheets_client.append_rows(
             config["google_sheets"]["spreadsheet_id"],
@@ -425,12 +106,10 @@ def main() -> int:
         logger.error("Не вдалось записати у Google Sheets: %s", exc)
 
     try:
-        telegram_client.send_job_cards(matched_jobs)
+        telegram_client.send_job_cards(final_jobs)
     except Exception as exc:  # noqa: BLE001
         logger.error("Не вдалось надіслати Telegram-повідомлення: %s", exc)
 
-    # Зберігаємо ID навіть тих вакансій, що не пройшли поріг матчингу —
-    # інакше вони знову й знову з'являтимуться в майбутніх прогонах.
     save_seen(updated_seen)
     logger.info("Готово.")
     return 0

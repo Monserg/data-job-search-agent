@@ -2,30 +2,74 @@
 # Конфігурація агента пошуку вакансій
 # ==========================================================
 
-# Три яруси пріоритету. Пошук не звужується — усі три яруси опитуються
-# паралельно, різниця лише в тому, що Tier 1 завжди йде найвище у звіті
-# (Google Sheets / Telegram), незалежно від Match Score.
-keywords:
-  tier1:  # швидкий дохід — найвищий пріоритет
-    - "iOS Developer"
-    - "Swift"
-    - "Senior iOS"
-    - "iOS Contract"
-    - "Freelance iOS"
-  tier2:  # будь-яка стабільна робота — існуючий список, нічого не видалено
-    - "стажер"
-    - "intern"
-    - "data manager"
-    - "data analyst"
-    - "data quality"
-  tier3:  # стратегічна ціль — довгостроковий напрям, менш терміновий
+# ==============================================================================
+# SEARCH CONFIGURATION
+# ==============================================================================
+search:
+  queries:
+    # 1. Direct Junior/Entry AI & LLM Roles
+    - "Junior AI Engineer"
+    - "Junior LLM Engineer"
+    - "Entry Level AI Engineer"
+    - "Junior Prompt Engineer"
+    - "Associate AI Developer"
+    - "Junior GenAI Engineer"
+
+    # 2. Applied Python & Frameworks
+    - "Junior Python AI Developer"
+    - "Python Developer LangChain"
+    - "Python Developer RAG"
+    - "Junior RAG Engineer"
+    - "LLM Application Developer"
+
+    # 3. General (Requires strict exclude_keywords filtering below)
     - "AI Engineer"
-    - "Applied AI"
-    - "ML Engineer"
     - "Prompt Engineer"
-    - "AI Agent Developer"
-    - "LLM Engineer"
-    - "Machine Learning"
+
+  # ПРИМІТКА: experience_levels і max_years_experience тут поки суто
+  # довідкові. Наші джерела віддають лише заголовок+опис вакансії, без
+  # структурованого поля "рівень досвіду" чи "роки досвіду" — тому
+  # реальне відсіювання за досвідом відбувається через filters.exclude_keywords
+  # нижче (наприклад "5+ years", "Senior"), а не через ці два поля.
+  experience_levels:
+    - "Entry level"
+    - "Associate"
+    - "Internship"
+
+  # Max experience threshold for internal parser/LLM evaluation
+  max_years_experience: 1.0
+
+# ==============================================================================
+# EXCLUSION & FILTERING RULES
+# ==============================================================================
+filters:
+  exclude_keywords:
+    # Seniority Titles
+    - "Senior"
+    - "Sr."
+    - "Lead"
+    - "Principal"
+    - "Staff"
+    - "Head of"
+    - "Director"
+    - "Manager"
+    - "Architect"
+
+    # Strict Experience Phrases
+    - "2+ years"
+    - "3+ years"
+    - "4+ years"
+    - "5+ years"
+    - "2-4 years"
+    - "3-5 years"
+    - "minimum 2 years"
+    - "minimum 3 years"
+    - "at least 2 years"
+    - "at least 3 years"
+
+    # Advanced Academic Requirements (if not relevant)
+    - "PhD"
+    - "Ph.D."
 
 # Джерела, які потрібно опитувати. can_disable дозволяє швидко
 # вимкнути джерело, якщо його розмітка зламалась, не видаляючи конфіг.
@@ -50,53 +94,21 @@ sources:
     enabled: true
   linkedin_alerts:
     enabled: true
-    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
-    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
-    feed_urls: []
   remotive:
     enabled: true
   himalayas:
-    enabled: true
+    enabled: true    
+    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
+    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
+feed_urls: ["https://www.google.com/alerts/feeds/перше", "https://www.google.com/alerts/feeds/друге", "https://www.google.com/alerts/feeds/третє"]
 
-# Вакансії, що містять будь-яке з цих слів (у заголовку чи описі), повністю
-# виключаються зі звіту — незалежно від ярусу чи Match Score. Порівняння
-# без урахування регістру.
-exclude_keywords:
-  - "deftech"
-  - "військовослужбовець"
-  - "Державна служба"
-  - "Міністерство оборони України"
-  - "ЗСУ"
-  - "Trainee QA"
-  - "Trainee Manual QA"
-
-# Тільки для Tier 2/3 (Tier 1/iOS — без обмежень). Виключає вакансії
-# рівня Middle/Senior — шукаємо саме позиції для входу без досвіду.
-tier23_exclude_keywords:
-  - "Middle"
-  - "Senior"
-  - "Lead"
-  - "Head of"
-  
-# Google Sheets, куди пишеться таблиця (колонки A-K; L "Виконано" — вручну)
+# Google Sheets, куди пишеться таблиця (колонки A-E: дата, назва,
+# компанія, джерело, посилання). Match Score / CV / причина прибрані
+# разом з усім шаром матчингу (2026-09-20). Колонки F-J (CANVA/EN/
+# На адаптацію/Виконано/Feedback) заповнюються вручну.
 google_sheets:
   spreadsheet_id: "1RYP2ub_m7sCtag-MLuZKeukyUhn9WkzvMRKnZ52jeDw"
   worksheet_name: "Vacancies"
-
-# Google Drive, звідки читаються 12 резюме (.pdf)
-google_drive:
-  resumes_folder_id: "16wjJ0UDPk28jcX6jcllsvjWxrkPi0qIP"
-
-# Локальний матчинг без AI: ваги для розрахунку Match Score
-matching:
-  min_score_to_report: 30   # % — вакансії нижче цього порогу не потрапляють у звіт
-  title_weight: 2.0          # збіг ключового слова в заголовку резюме важить більше
-  body_weight: 1.0
-  # Опційне збагачення через Gemini API (безкоштовний тариф), лише для
-  # вакансій, що вже пройшли min_score_to_report. Якщо немає секрету
-  # GEMINI_API_KEY — агент просто працює без цього кроку, без помилок.
-  use_gemini_enrichment: true
-  gemini_model: "gemini-3.5-flash"
 
 telegram:
   # chat_id можна лишити порожнім і взяти з секрету TELEGRAM_CHAT_ID

@@ -22,7 +22,9 @@ search:
     - "Junior RAG Engineer"
     - "LLM Application Developer"
 
-    # 3. General (Requires strict exclude_keywords filtering below)
+    # 3. General (тепер справді "строго відфільтровані" — keyword_matches
+    # вимагає точної фрази "AI Engineer"/"Prompt Engineer" як сусідніх
+    # слів, а не підрядка будь-де в тексті; див. src/scrapers/base.py)
     - "AI Engineer"
     - "Prompt Engineer"
 
@@ -94,13 +96,16 @@ sources:
     enabled: true
   linkedin_alerts:
     enabled: true
+    # Встав сюди РЕАЛЬНІ RSS-посилання своїх Google Alerts (див.
+    # SETUP.md, крок 5) — зараз тут порожньо: попередні значення
+    # ("перше"/"друге"/"третє") були заглушками, а не робочими URL,
+    # і до того ж лежали поза цим блоком (feed_urls ігнорувався).
+    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "AI Engineer" remote
+    feed_urls: []
   remotive:
     enabled: true
   himalayas:
-    enabled: true    
-    # Встав сюди RSS-посилання своїх Google Alerts (див. SETUP.md, крок 5).
-    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "data analyst" remote
-feed_urls: ["https://www.google.com/alerts/feeds/перше", "https://www.google.com/alerts/feeds/друге", "https://www.google.com/alerts/feeds/третє"]
+    enabled: true
 
 # Google Sheets, куди пишеться таблиця (колонки A-E: дата, назва,
 # компанія, джерело, посилання). Match Score / CV / причина прибрані

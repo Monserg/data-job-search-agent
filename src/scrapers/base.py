@@ -113,6 +113,28 @@ def is_excluded(text: str, exclude_keywords: list) -> bool:
     return False
 
 
+# Слова-маркери AI/ML-тематики, які МАЮТЬ бути в НАЗВІ вакансії.
+# Root-cause фікс 2026-09-21 (вакансії "Full Stack Developer (Python/React)"
+# і "Trainee Full-Stack JS Engineer" потрапили у звіт): багатослівні
+# запити (3+ слова, напр. "Python Developer LangChain", "Junior AI
+# Engineer") у keyword_matches шукають слова ДЕ ЗАВГОДНО в описі, тож
+# звичайна fullstack-вакансія, де в описі є "LangChain" / "AI tools" +
+# "Junior" + "Engineer", проходила. Тепер тематика перевіряється саме
+# по заголовку — опис лишається лише для відсіювання за досвідом.
+AI_TITLE_RE = re.compile(
+    r"(?<![a-z0-9])(ai|llm|llms|genai|gen[\s-]?ai|ml|mlops|nlp|rag|langchain|"
+    r"machine[\s-]+learning|deep[\s-]+learning|generative|artificial[\s-]+intelligence|"
+    r"prompt|agentic|agents?|copilot|"
+    r"аі|ші|штучн\w*|машинн\w*\s+навчан\w*)(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def is_ai_title(title: str) -> bool:
+    """True, якщо в назві вакансії є AI/ML-маркер (з межами слова)."""
+    return bool(AI_TITLE_RE.search(title or ""))
+
+
 def slugify(keyword: str) -> str:
     return keyword.strip().lower().replace(" ", "-")
 

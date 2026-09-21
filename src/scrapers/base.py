@@ -15,6 +15,7 @@
 не зупиняв весь щоденний прогін.
 """
 import logging
+import re
 
 logger = logging.getLogger("job_agent.scrapers")
 
@@ -37,20 +38,43 @@ def safe_call(fn, *args, **kwargs):
 
 def keyword_matches(text: str, queries: list) -> bool:
     """
-    Гнучкий пошук: вакансія проходить, якщо ХОЧА Б ОДИН query повністю
-    "покривається" текстом — тобто ВСІ слова цього query зустрічаються
-    десь у тексті (в будь-якому порядку, не обов'язково поруч).
+    Вакансія проходить, якщо ХОЧА Б ОДИН query відповідає тексту.
 
-    Приклад: query "Junior AI Engineer" збіжиться з "AI Engineer (Junior)"
-    чи "Junior Machine Learning / AI Engineer", бо всі три слова присутні,
-    хоча дослівної фрази немає. Це свідомо ширший режим — точна фраза як
-    query була б занадто суворою і майже завжди повертала б 0 вакансій.
+    ВАЖЛИВО (root-cause фікс 2026-09-21): раніше перевірка була
+    "усі слова query — підрядок ДЕ ЗАВГОДНО в тексті" (без меж слова).
+    Для довгих специфічних запитів це працювало нормально, але для
+    коротких "загальних" запитів на 2 слова (як-от "AI Engineer",
+    "Prompt Engineer" у config.yaml) це масово ловило нерелевантні
+    вакансії: підрядок "ai" збігався зі словами "maintain", "training",
+    "available", "email" тощо, а "prompt" — зі словом "promptly"
+    ("respond promptly"). У поєднанні зі словом "engineer", яке
+    трапляється майже в будь-якій технічній вакансії (навіть якщо не
+    в заголовку, то в описі — "our engineering team"), це пропускало
+    у звіт випадкові Backend/Golang/QA-вакансії, Accountant тощо.
+
+    Тепер:
+    - Для запитів з 1-2 слів вимагається ТОЧНА ФРАЗА (сусідні слова,
+      з межами слова, допускається дефіс/пробіл між ними) — це і є та
+      "сувора фільтрація", яку конфіг обіцяв для загальних запитів.
+    - Для довших запитів (3+ слова, напр. "Junior LLM Engineer")
+      лишається гнучкий режим "усі слова присутні десь у тексті, в
+      будь-якому порядку" — ризик хибного збігу там значно нижчий
+      через специфічність слів, а гнучкість ловить формулювання типу
+      "AI Engineer (Junior)" чи "Junior Machine Learning / AI Engineer".
+      Різниця від старої поведінки — межі слова замість підрядка.
     """
     text_low = text.lower()
     for query in queries:
         words = query.lower().split()
-        if all(word in text_low for word in words):
-            return True
+        if not words:
+            continue
+        if len(words) <= 2:
+            pattern = r"\b" + r"[\s-]+".join(re.escape(w) for w in words) + r"\b"
+            if re.search(pattern, text_low):
+                return True
+        else:
+            if all(re.search(r"\b" + re.escape(w) + r"\b", text_low) for w in words):
+                return True
     return False
 
 
@@ -85,7 +109,6 @@ def html_link_scrape(url: str, link_pattern, base_url: str, source_name: str,
     компанії. Він буде "олюднений" (дефіси -> пробіли, Capitalize).
     Якщо `company_pattern` не передано або не збігся — company = "".
     """
-    import re
     import requests
     from bs4 import BeautifulSoup
 
@@ -143,8 +166,8 @@ def fetch_page_text(url: str, timeout: int = 15) -> str:
     опис вакансії (де і можуть зустрічатись стоп-слова на кшталт
     "deftech", вимоги до досвіду тощо) на сторінці списку відсутній.
     Ця функція дозволяє довантажити саме сторінку ОКРЕМОЇ вакансії, щоб
-    фільтри (exclude_keywords, tier23_exclude_keywords,
-    requires_experience) бачили реальний вміст, а не тільки заголовок.
+    exclude_keywords в main.py бачив реальний вміст сторінки вакансії,
+    а не лише заголовок посилання зі списку.
 
     Повертає порожній рядок при БУДЬ-ЯКІЙ помилці (мережа, 404, таймаут
     тощо) — виклик НЕ повинен ламати весь скрапер; той, хто викликає цю

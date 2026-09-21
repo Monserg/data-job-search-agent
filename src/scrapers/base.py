@@ -79,10 +79,38 @@ def keyword_matches(text: str, queries: list) -> bool:
 
 
 def is_excluded(text: str, exclude_keywords: list) -> bool:
-    """Повертає True, якщо в тексті є хоча б одна заборонена фраза
-    (наприклад "Senior", "5+ years") — таку вакансію треба відкинути."""
+    """
+    Повертає True, якщо в тексті є хоча б одна заборонена фраза
+    (наприклад "Senior", "5+ years") — таку вакансію треба відкинути.
+
+    ВАЖЛИВО (root-cause фікс 2026-09-21, той самий клас багу, що й у
+    keyword_matches): раніше перевірка була "kw — підрядок ДЕ ЗАВГОДНО
+    в тексті". Для односкладних стоп-слів у config.yaml
+    (filters.exclude_keywords) це масово ловило нерелевантні збіги:
+    "Architect" збігався з "architecture" (стандартне слово в описі
+    майже будь-якої технічної вакансії), "Lead" — з "leadership" (типовий
+    soft-skill), "Manager" міг би збігтись з похідними формами. Через
+    це 100% реально знайдених AI-вакансій одного дня були виключені,
+    хоча жодна з них не вимагала сеньйорності чи років досвіду.
+
+    Тепер: односкладні стоп-слова без пунктуації/цифр (Senior, Lead,
+    Manager, Architect, Director, Staff, Principal) шукаються з межами
+    слова — тобто "architecture"/"leadership" більше НЕ тригерять
+    виключення, а буквальне слово "Senior"/"Lead" в тексті — і далі так.
+    Фрази з цифрами чи пунктуацією ("2+ years", "Head of", "Ph.D.")
+    лишаються підрядковим пошуком — межі слова для "+"/"." не мають
+    сенсу, а ризик хибного збігу в них значно нижчий.
+    """
     text_low = text.lower()
-    return any(kw.lower() in text_low for kw in exclude_keywords)
+    for kw in exclude_keywords:
+        kw_low = kw.lower()
+        if kw_low.isalpha():
+            if re.search(r"\b" + re.escape(kw_low) + r"\b", text_low):
+                return True
+        else:
+            if kw_low in text_low:
+                return True
+    return False
 
 
 def slugify(keyword: str) -> str:

@@ -22,7 +22,7 @@ import sys
 from config_loader import load_config
 from dedup import load_seen, save_seen, filter_new_jobs
 from scrapers import REGISTRY
-from scrapers.base import safe_call, is_excluded
+from scrapers.base import safe_call, is_excluded, is_ai_title
 import sheets_client
 import telegram_client
 
@@ -49,6 +49,13 @@ def collect_jobs(config: dict) -> list:
         before = len(jobs)
         jobs = [j for j in jobs if not is_excluded(j["text"], exclude_keywords)]
         excluded_count = before - len(jobs)
+
+        # Тематичний гейт: AI/ML-маркер має бути саме в НАЗВІ вакансії.
+        before_topic = len(jobs)
+        jobs = [j for j in jobs if is_ai_title(j["title"])]
+        off_topic = before_topic - len(jobs)
+        if off_topic:
+            logger.info("  (відкинуто %d вакансій без AI/ML у назві)", off_topic)
 
         logger.info("  -> знайдено %d вакансій%s", len(jobs),
                      f" (ще {excluded_count} відкинуто фільтром exclude_keywords)" if excluded_count else "")

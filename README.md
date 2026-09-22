@@ -32,12 +32,17 @@ workflow_dispatch — щоденний тригер живе поза репоз
 
 ## Джерела вакансій
 
-Djinni, DOU.ua, RemoteOK, WeWorkRemotely, Robota.ua, Work.ua,
-NoFluffJobs, JustRemote — скрапляться напряму.
-LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід,
-див. SETUP.md крок 5).
-Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
-блокує скрапінг), джерело відключене з поясненням у коді.
+- Djinni
+- DOU.ua
+- RemoteOK
+- WeWorkRemotely
+- Robota.ua
+- Work.ua,
+- NoFluffJobs
+- JustRemote — скрапляться напряму.
+
+LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід, див. SETUP.md крок 5).
+Indeed — наразі немає стабільного безкоштовного способу (закритий RSS, блокує скрапінг), джерело відключене з поясненням у коді.
 
 ## Локальний запуск для тесту
 

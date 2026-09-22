@@ -119,7 +119,11 @@ telegram:
   # chat_id можна лишити порожнім і взяти з секрету TELEGRAM_CHAT_ID
   parse_mode: "HTML"
 
-# Часове вікно звіту (для довідки; фактичний запуск керується GitHub Actions cron)
+# Часове вікно звіту (для довідки). Фактичний запуск керується ЗОВНІШНІМ
+# тригером cron-job.org (POST workflow_dispatch о 9:00 Europe/Kyiv) —
+# внутрішній розклад (`schedule:`) у .github/workflows/daily_job_search.yml
+# видалено: саме він, поряд із зовнішнім тригером, спричиняв подвійні/
+# запізнілі запуски (наприклад, звіт о 17:10 замість ранку).
 report_window:
   timezone: "Europe/Kyiv"
   start: "09:00"

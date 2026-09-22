@@ -18,10 +18,9 @@ Account), Telegram Bot API.
    візьми існуючий).
 2. У меню зліва: **APIs & Services → Library** → увімкни:
    - Google Sheets API
-   - Google Drive API (потрібен, бо `gspread` запитує scope
+   - Google Drive API (потрібен лише тому, що `gspread` запитує scope
      `.../auth/drive` для роботи з таблицею за ID — жодні файли з
-     Drive пайплайн НЕ читає, `src/drive_client.py` більше не
-     викликається)
+     Drive пайплайн не читає)
 3. **APIs & Services → Credentials → Create Credentials → Service Account**.
    Назви як завгодно, наприклад `job-agent`.
 4. Відкрий створений сервісний акаунт → вкладка **Keys → Add Key → Create

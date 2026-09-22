@@ -69,9 +69,40 @@ filters:
     - "at least 2 years"
     - "at least 3 years"
 
+    # Experience Phrases — навіть "виключно від 1 року" (2026-09-22:
+    # додано після https://djinni.co/jobs/849450-aws-net-c-ai-engineer/,
+    # де на сторінці вакансії стояло "Only from 1 year of experience" +
+    # "Required skills experience: ... 1 year"). EN та UA формулювання —
+    # Djinni нерідко пише вимоги прямим текстом в описі обома мовами.
+    - "1+ year"
+    - "1+ years"
+    - "1-2 years"
+    - "minimum 1 year"
+    - "at least 1 year"
+    - "from 1 year"
+    - "only from 1 year"
+    - "1 year of experience"
+    - "1 year experience"
+    - "від 1 року"
+    - "від 1-го року"
+    - "мінімум 1 рік"
+    - "1 рік досвіду"
+
     # Advanced Academic Requirements (if not relevant)
     - "PhD"
     - "Ph.D."
+
+    # English Level Requirements — виключаємо вакансії, що прямо
+    # вимагають рівень B2 і вище (2026-09-22, той самий приклад
+    # вакансії: "Required languages: English B2 - Upper Intermediate").
+    # "Upper-Intermediate" додано окремо, бо саме так Djinni підписує
+    # рівень B2 у власному інтерфейсі.
+    - "English B2"
+    - "B2 - Upper Intermediate"
+    - "B2 Upper Intermediate"
+    - "Upper-Intermediate"
+    - "Англійська B2"
+    - "англійська на рівні B2"
 
 # Джерела, які потрібно опитувати. can_disable дозволяє швидко
 # вимкнути джерело, якщо його розмітка зламалась, не видаляючи конфіг.
@@ -97,7 +128,7 @@ sources:
   linkedin_alerts:
     enabled: true
     # Встав сюди РЕАЛЬНІ RSS-посилання своїх Google Alerts (див.
-    # SETUP.md, крок 5) — зараз тут порожньо: попередні значення
+    # SETUP.md, крок 4) — зараз тут порожньо: попередні значення
     # ("перше"/"друге"/"третє") були заглушками, а не робочими URL,
     # і до того ж лежали поза цим блоком (feed_urls ігнорувався).
     # Приклад запиту в Google Alerts: site:linkedin.com/jobs "AI Engineer" remote

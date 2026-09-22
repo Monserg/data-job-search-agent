@@ -1,5 +1,12 @@
 """
-Точка входу. Викликається щоранку GitHub Actions'ом (9:00-10:00 Kyiv).
+Точка входу. Запускається ВИКЛЮЧНО через workflow_dispatch — внутрішнього
+розкладу GitHub Actions (`schedule:`) більше немає (він спричиняв
+подвійні/запізнілі запуски, див. .github/workflows/daily_job_search.yml).
+
+Щоденний тригер о 9:00 Europe/Kyiv — зовнішній сервіс cron-job.org, який
+раз на день робить POST-запит до GitHub API
+(.../actions/workflows/daily_job_search.yml/dispatches). Налаштування
+самого крон-джоба зберігаються в cron-job.org, не в цьому репозиторії.
 
 Порядок дій:
 1. Завантажити конфіг.

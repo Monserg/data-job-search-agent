@@ -5,24 +5,29 @@
 резюме локально (без AI API), пише результат у Google Sheets і надсилає
 дайджест у Telegram. Повністю на безкоштовних сервісах.
 
+Щоденний запуск ініціює ЗОВНІШНІЙ сервіс cron-job.org (не внутрішній
+розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 8.
+
 ## Швидкий старт
 
 Дивись **SETUP.md** — покроково, з чого почати (GitHub, Google Service
-Account, Drive, Sheets, Telegram-бот).
+Account, Drive, Sheets, Telegram-бот, зовнішній cron).
 
 ## Структура проєкту
 
 ```
-config.yaml              — ключові слова, джерела, налаштування таблиці
-src/main.py               — точка входу / оркестратор
-src/scrapers/              — по одному файлу на кожне джерело вакансій
-src/resume_matcher.py     — локальний розрахунок Match Score (без AI)
-src/drive_client.py        — читання 12 резюме з Google Drive
-src/sheets_client.py       — запис звіту в Google Sheets
-src/telegram_client.py     — надсилання дайджесту в Telegram
-src/dedup.py                — щоб вакансії не дублювались day-to-day
-data/seen_jobs.json         — сховище "вже показаних" вакансій
-.github/workflows/          — розклад автоматичного запуску (GitHub Actions)
+config.yaml — ключові слова, джерела, налаштування таблиці
+src/main.py — точка входу / оркестратор
+src/scrapers/ — по одному файлу на кожне джерело вакансій
+src/resume_matcher.py — локальний розрахунок Match Score (без AI)
+src/drive_client.py — читання 12 резюме з Google Drive
+src/sheets_client.py — запис звіту в Google Sheets
+src/telegram_client.py — надсилання дайджесту в Telegram
+src/dedup.py — щоб вакансії не дублювались day-to-day
+data/seen_jobs.json — сховище "вже показаних" вакансій
+.github/workflows/ — сам workflow виконання (GitHub Actions).
+Запускається ТІЛЬКИ вручну/через
+workflow_dispatch — щоденний тригер живе поза репозиторієм, у cron-job.org
 ```
 
 ## Джерела вакансій
@@ -44,3 +49,10 @@ export TELEGRAM_CHAT_ID="..."
 cd src && python main.py
 ```
 # data-job-search-agent
+
+Djinni, DOU.ua, RemoteOK, WeWorkRemotely, Robota.ua, Work.ua,
+NoFluffJobs, JustRemote — скрапляться напряму.
+LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід,
+див. SETUP.md крок 5).
+Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
+блокує скрапінг), джерело відключене з поясненням у коді.

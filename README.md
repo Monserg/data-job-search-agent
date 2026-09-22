@@ -9,7 +9,7 @@
 повністю на безкоштовних сервісах.
 
 Щоденний запуск ініціює ЗОВНІШНІЙ сервіс cron-job.org (не внутрішній
-розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 8.
+розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 7.
 
 ## Як фільтрується список вакансій
 
@@ -29,10 +29,9 @@
 
 Це навмисно СИРИЙ список — без Match Score, без рекомендації резюме,
 без AI-аналізу "чому підходить". Шар матчингу проти резюме (локальний
-і через Gemini) прибрано з пайплайна 2026-09-20 як недостовірний;
-файли `src/resume_matcher.py`, `src/drive_client.py`,
-`src/gemini_client.py` лишились у репозиторії, але `src/main.py` їх
-більше не імпортує й не викликає.
+і через Gemini) прибрано з пайплайна 2026-09-20 як недостовірний; сам
+код цього шару (`resume_matcher.py`, `drive_client.py`,
+`gemini_client.py`) видалено з репозиторію.
 
 ## Швидкий старт
 
@@ -56,19 +55,15 @@ data/seen_jobs.json — сховище "вже показаних" ваканс�
 workflow_dispatch — щоденний тригер живе поза репозиторієм, у cron-job.org
 ```
 
-## Джерела вакансій
 
-- Djinni
-- DOU.ua
-- RemoteOK
-- WeWorkRemotely
-- Robota.ua
-- Work.ua,
-- NoFluffJobs
-- JustRemote — скрапляться напряму.
+## Джерела вакансій (12)
 
-LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід, див. SETUP.md крок 5).
-Indeed — наразі немає стабільного безкоштовного способу (закритий RSS, блокує скрапінг); `src/scrapers/indeed.py` завжди повертає `[]`
+Djinni, DOU.ua, RemoteOK, WeWorkRemotely, Robota.ua, Work.ua,
+NoFluffJobs, JustRemote, Remotive, Himalayas — скрапляться напряму.
+LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід,
+див. SETUP.md крок 4).
+Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
+блокує скрапінг); `src/scrapers/indeed.py` завжди повертає `[]`.
 
 ## Google Sheets — що пише код, а що вручну
 

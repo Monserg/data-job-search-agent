@@ -115,8 +115,12 @@ sources:
     enabled: true
   weworkremotely:
     enabled: true
-  robota_ua:
+  robota_ua_email:
     enabled: true
+    # Email-сповіщення "збереженого пошуку" через IMAP -- та сама
+    # скринька й секрети, що й work_ua_email (WORK_UA_EMAIL_ADDRESS/
+    # WORK_UA_EMAIL_APP_PASSWORD), інший фільтр відправника.
+    # Деталі — src/scrapers/robota_ua_email.py.
   work_ua_email:
     enabled: true
     # Читає email-сповіщення "збереженого пошуку" work.ua через IMAP

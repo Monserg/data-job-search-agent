@@ -1,14 +1,16 @@
 """
 Спільна логіка для email-скраперів (IMAP + Gmail App Password).
 
-Зараз використовується work_ua_email.py та robota_ua_email.py — обидва
-читають ТУ САМУ поштову скриньку (WORK_UA_EMAIL_ADDRESS /
-WORK_UA_EMAIL_APP_PASSWORD), розрізняючи джерела за відправником
-(sender_filter). Назва змінних середовища лишена "WORK_UA_*" з
+Зараз використовується work_ua_email.py, robota_ua_email.py та
+linkedin_email.py — усі читають ТУ САМУ поштову скриньку
+(WORK_UA_EMAIL_ADDRESS / WORK_UA_EMAIL_APP_PASSWORD), розрізняючи
+джерела за відправником (sender_filter). Назва змінних середовища лишена "WORK_UA_*" з
 історичних причин (перший email-скрапер був саме для work.ua) --
 секрети НЕ треба перейменовувати чи дублювати для нових джерел, що
 падають у ту саму скриньку; кожен новий email-скрапер просто передає
 свій sender_filter/link_pattern/source_name у fetch_unread_jobs().
+Якщо розмітка листа складніша за "кожне <a> = вакансія" (як у LinkedIn),
+можна передати власний parser (див. параметр parser нижче).
 """
 import email
 import imaplib
@@ -89,12 +91,21 @@ def parse_jobs_from_html(html: str, link_pattern, source_name: str) -> list:
     return jobs
 
 
-def fetch_unread_jobs(sender_filter: str, link_pattern, source_name: str,
+def fetch_unread_jobs(sender_filter, link_pattern, source_name: str,
                        address_env: str = "WORK_UA_EMAIL_ADDRESS",
-                       password_env: str = "WORK_UA_EMAIL_APP_PASSWORD") -> list:
+                       password_env: str = "WORK_UA_EMAIL_APP_PASSWORD",
+                       parser=None) -> list:
     """
     Підключається по IMAP до Gmail, читає НЕПРОЧИТАНІ листи від
-    sender_filter, парсить з кожного вакансії через parse_jobs_from_html.
+    sender_filter, парсить з кожного вакансії через parser
+    (за замовчуванням -- parse_jobs_from_html).
+
+    sender_filter -- рядок АБО список рядків (кілька відправників одного
+    сервісу, напр. LinkedIn шле з різних адрес). Листи від усіх
+    відправників об'єднуються без дублів.
+
+    parser -- функція з тією ж сигнатурою, що й parse_jobs_from_html:
+    parser(html, link_pattern, source_name) -> list[dict].
 
     Звичайний (не .PEEK) FETCH BODY[] сам позначає прочитаний лист
     \\Seen (RFC 3501) -- тож при наступному запуску той самий лист
@@ -121,18 +132,27 @@ def fetch_unread_jobs(sender_filter: str, link_pattern, source_name: str,
         logger.warning("%s (email): не вдалось підключитись до %s (%s)", source_name, IMAP_HOST, exc)
         return []
 
+    parse = parser or parse_jobs_from_html
+    senders = [sender_filter] if isinstance(sender_filter, str) else list(sender_filter)
+
     all_jobs = []
     try:
-        status, msg_ids = imap.search(None, "UNSEEN", f'FROM "{sender_filter}"')
-        if status != "OK":
-            logger.warning("%s (email): IMAP SEARCH повернув %s", source_name, status)
-            return []
-
-        id_list = msg_ids[0].split()
-        logger.info(
-            "%s (email): знайдено %d непрочитаних листів від %s",
-            source_name, len(id_list), sender_filter,
-        )
+        id_list = []
+        for sender in senders:
+            status, msg_ids = imap.search(None, "UNSEEN", f'FROM "{sender}"')
+            if status != "OK":
+                logger.warning(
+                    "%s (email): IMAP SEARCH (%s) повернув %s", source_name, sender, status,
+                )
+                continue
+            found = msg_ids[0].split()
+            logger.info(
+                "%s (email): знайдено %d непрочитаних листів від %s",
+                source_name, len(found), sender,
+            )
+            for mid in found:
+                if mid not in id_list:
+                    id_list.append(mid)
 
         for msg_id in id_list:
             status, msg_data = imap.fetch(msg_id, "(BODY[])")
@@ -151,7 +171,7 @@ def fetch_unread_jobs(sender_filter: str, link_pattern, source_name: str,
                 )
                 continue
 
-            all_jobs.extend(parse_jobs_from_html(html, link_pattern, source_name))
+            all_jobs.extend(parse(html, link_pattern, source_name))
     finally:
         try:
             imap.close()

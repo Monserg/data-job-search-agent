@@ -20,7 +20,6 @@ REGISTRY = {
     "remoteok": remoteok,
     "weworkremotely": weworkremotely,
     "robota_ua": robota_ua,
-    "work_ua": work_ua,
     "work_ua_email": work_ua_email,
     "nofluffjobs": nofluffjobs,
     "justremote": justremote,

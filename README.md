@@ -1,7 +1,7 @@
 # Job Search Agent
 
 Автоматичний агент, який раз на день шукає нові вакансії за списком
-пошукових запитів (`search.queries` у `config.yaml`) на 13 джерелах,
+пошукових запитів (`search.queries` у `config.yaml`) на 12 джерелах,
 відсіює вже бачені й невідповідні (сеньйорність, роки досвіду,
 не-AI/ML вакансії — детальніше нижче) і публікує результат у вигляді
 рядків у Google Sheets та карток у Telegram. Жодного AI API для самого
@@ -9,7 +9,7 @@
 повністю на безкоштовних сервісах.
 
 Щоденний запуск ініціює ЗОВНІШНІЙ сервіс cron-job.org (не внутрішній
-розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 7.
+розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 6.
 
 ## Як фільтрується список вакансій
 
@@ -56,7 +56,7 @@ workflow_dispatch — щоденний тригер живе поза репоз
 ```
 
 
-## Джерела вакансій (13)
+## Джерела вакансій (12)
 
 Djinni, DOU.ua, RemoteOK, WeWorkRemotely, NoFluffJobs, JustRemote,
 Remotive, Himalayas — скрапляться напряму.
@@ -65,8 +65,6 @@ msm.search.job@gmail.com (IMAP, одні й ті самі секрети
 WORK_UA_EMAIL_ADDRESS / WORK_UA_EMAIL_APP_PASSWORD; джерела
 розрізняються за відправником листа). Для LinkedIn потрібен Job alert
 з доставкою на email — див. docstring src/scrapers/linkedin_email.py.
-Додатково LinkedIn можна підключити через Google Alerts RSS (офіційний
-безкоштовний обхід, див. SETUP.md крок 4).
 Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
 блокує скрапінг); `src/scrapers/indeed.py` завжди повертає `[]`.
 

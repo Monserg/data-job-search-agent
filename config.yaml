@@ -117,8 +117,13 @@ sources:
     enabled: true
   robota_ua:
     enabled: true
-  work_ua:
+  work_ua_email:
     enabled: true
+    # Читає email-сповіщення "збереженого пошуку" work.ua через IMAP
+    # (окрема Gmail-скринька), а не пряме HTML-скрапінг сайту. Працює
+    # паралельно з work_ua вище — дублі прибирає dedup.py.
+    # Потребує GitHub Secrets: WORK_UA_EMAIL_ADDRESS, WORK_UA_EMAIL_APP_PASSWORD.
+    # Деталі механіки — див. docstring src/scrapers/work_ua_email.py.
   nofluffjobs:
     enabled: true
   justremote:

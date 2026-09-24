@@ -1,7 +1,7 @@
 # Job Search Agent
 
 Автоматичний агент, який раз на день шукає нові вакансії за списком
-пошукових запитів (`search.queries` у `config.yaml`) на 12 джерелах,
+пошукових запитів (`search.queries` у `config.yaml`) на 13 джерелах,
 відсіює вже бачені й невідповідні (сеньйорність, роки досвіду,
 не-AI/ML вакансії — детальніше нижче) і публікує результат у вигляді
 рядків у Google Sheets та карток у Telegram. Жодного AI API для самого
@@ -56,12 +56,17 @@ workflow_dispatch — щоденний тригер живе поза репоз
 ```
 
 
-## Джерела вакансій (12)
+## Джерела вакансій (13)
 
-Djinni, DOU.ua, RemoteOK, WeWorkRemotely, Robota.ua, Work.ua,
-NoFluffJobs, JustRemote, Remotive, Himalayas — скрапляться напряму.
-LinkedIn — через Google Alerts RSS (офіційний безкоштовний обхід,
-див. SETUP.md крок 4).
+Djinni, DOU.ua, RemoteOK, WeWorkRemotely, NoFluffJobs, JustRemote,
+Remotive, Himalayas — скрапляться напряму.
+Robota.ua, Work.ua, LinkedIn — через email-сповіщення на скриньку
+msm.search.job@gmail.com (IMAP, одні й ті самі секрети
+WORK_UA_EMAIL_ADDRESS / WORK_UA_EMAIL_APP_PASSWORD; джерела
+розрізняються за відправником листа). Для LinkedIn потрібен Job alert
+з доставкою на email — див. docstring src/scrapers/linkedin_email.py.
+Додатково LinkedIn можна підключити через Google Alerts RSS (офіційний
+безкоштовний обхід, див. SETUP.md крок 4).
 Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
 блокує скрапінг); `src/scrapers/indeed.py` завжди повертає `[]`.
 
@@ -82,4 +87,3 @@ export TELEGRAM_BOT_TOKEN="..."
 export TELEGRAM_CHAT_ID="..."
 cd src && python main.py
 ```
-# data-job-search-agent

@@ -1,8 +1,6 @@
 """
 LinkedIn — вакансії через email-сповіщення "Job alerts", а не через
-Google Alerts RSS (src/scrapers/linkedin_alerts.py лишається поруч,
-не видалений; він працює, лише якщо в config.yaml задано feed_urls) і не
-через пряме скрапінг-парсення LinkedIn (порушує їхні умови використання).
+пряме скрапінг-парсення LinkedIn (порушує їхні умови використання).
 
 IMAP-механіка спільна з work_ua_email.py / robota_ua_email.py -- див.
 src/scrapers/email_common.py. Використовує ТУ САМУ поштову скриньку й

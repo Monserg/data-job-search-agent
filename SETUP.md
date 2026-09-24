@@ -43,26 +43,7 @@ A–E при першому запуску, якщо його ще немає. �
 CANVA/EN/На адаптацію/Виконано/Feedback тощо — керуються вручну, код
 їх не чіпає.
 
-## Крок 4. LinkedIn через Google Alerts (безкоштовна легальна альтернатива)
-
-LinkedIn не дає безкоштовного API для вакансій, тому обходимо офіційно:
-
-1. Йди на https://www.google.com/alerts
-2. Для кожного напрямку створи алерт типу:
-   `site:linkedin.com/jobs "AI Engineer" remote`
-3. У "Show options" постав **Delivery: RSS feed**.
-4. Створи алерт, потім відкрий сторінку алертів → напроти нього буде
-   іконка RSS — скопіюй посилання.
-5. Встав усі такі посилання у `config.yaml`:
-```yaml
-   linkedin_alerts:
-     enabled: true
-     feed_urls:
-       - "https://www.google.com/alerts/feeds/.../..."
-       - "https://www.google.com/alerts/feeds/.../..."
-```
-
-## Крок 5. Telegram-бот
+## Крок 4. Telegram-бот
 
 1. У Telegram напиши боту **@BotFather** → `/newbot` → дай ім'я.
    Отримаєш `TELEGRAM_BOT_TOKEN`.
@@ -71,7 +52,7 @@ LinkedIn не дає безкоштовного API для вакансій, т�
 3. Дізнайся свій `chat_id`: напиши боту **@userinfobot** — він покаже
    твій ID (число).
 
-## Крок 6. Додай секрети в GitHub
+## Крок 5. Додай секрети в GitHub
 
 У репозиторії: **Settings → Secrets and variables → Actions → New
 repository secret**. Додай три секрети:
@@ -79,10 +60,10 @@ repository secret**. Додай три секрети:
 | Назва секрету | Значення |
 |---|---|
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | весь вміст JSON-файлу з Кроку 2 (цілком, як текст) |
-| `TELEGRAM_BOT_TOKEN` | токен з Кроку 5 |
-| `TELEGRAM_CHAT_ID` | твій chat_id з Кроку 5 |
+| `TELEGRAM_BOT_TOKEN` | токен з Кроку 4 |
+| `TELEGRAM_CHAT_ID` | твій chat_id з Кроку 4 |
 
-## Крок 7. Автоматичний щоденний запуск — через cron-job.org
+## Крок 6. Автоматичний щоденний запуск — через cron-job.org
 
 Внутрішній розклад GitHub Actions (`schedule:` у workflow-файлі)
 навмисно НЕ використовується — на цьому репозиторії він ненадійний:
@@ -123,7 +104,7 @@ repository secret**. Додай три секрети:
    history** у cron-job.org за наступну добу — там має бути рівно ОДИН
    запис на день.
 
-## Крок 8. Перевір вручну (без очікування щоденного тригера)
+## Крок 7. Перевір вручну (без очікування щоденного тригера)
 
 У репозиторії: вкладка **Actions → Daily Job Search → Run workflow**
 (кнопка справа) — запустить пайплайн одразу. Дивись логи кроків, якщо

@@ -134,14 +134,15 @@ sources:
     enabled: true
   indeed:
     enabled: true
-  linkedin_alerts:
+  linkedin_email:
     enabled: true
-    # Встав сюди РЕАЛЬНІ RSS-посилання своїх Google Alerts (див.
-    # SETUP.md, крок 4) — зараз тут порожньо: попередні значення
-    # ("перше"/"друге"/"третє") були заглушками, а не робочими URL,
-    # і до того ж лежали поза цим блоком (feed_urls ігнорувався).
-    # Приклад запиту в Google Alerts: site:linkedin.com/jobs "AI Engineer" remote
-    feed_urls: []
+    # Email-сповіщення LinkedIn "Job alerts" через IMAP -- та сама
+    # скринька й секрети, що й work_ua_email/robota_ua_email
+    # (WORK_UA_EMAIL_ADDRESS/WORK_UA_EMAIL_APP_PASSWORD), інший фільтр
+    # відправника. Потребує створеного на LinkedIn Job alert з
+    # доставкою на msm.search.job@gmail.com. Працює паралельно з
+    # linkedin_alerts вище — дублі прибирає dedup.py.
+    # Деталі — src/scrapers/linkedin_email.py.
   remotive:
     enabled: true
   himalayas:

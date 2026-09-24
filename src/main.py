@@ -48,10 +48,7 @@ def collect_jobs(config: dict) -> list:
             continue
 
         logger.info("Опитую джерело: %s", name)
-        if name == "linkedin_alerts":
-            jobs = safe_call(module.search, queries, source_cfg.get("feed_urls", []))
-        else:
-            jobs = safe_call(module.search, queries)
+        jobs = safe_call(module.search, queries)
 
         before = len(jobs)
         jobs = [j for j in jobs if not is_excluded(j["text"], exclude_keywords)]

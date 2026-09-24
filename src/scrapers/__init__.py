@@ -3,7 +3,6 @@ from . import (
     dou,
     remoteok,
     weworkremotely,
-    robota_ua,
     robota_ua_email,
     work_ua_email,
     nofluffjobs,

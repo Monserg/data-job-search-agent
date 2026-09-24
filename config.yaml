@@ -140,8 +140,7 @@ sources:
     # скринька й секрети, що й work_ua_email/robota_ua_email
     # (WORK_UA_EMAIL_ADDRESS/WORK_UA_EMAIL_APP_PASSWORD), інший фільтр
     # відправника. Потребує створеного на LinkedIn Job alert з
-    # доставкою на msm.search.job@gmail.com. Працює паралельно з
-    # linkedin_alerts вище — дублі прибирає dedup.py.
+    # доставкою на msm.search.job@gmail.com.
     # Деталі — src/scrapers/linkedin_email.py.
   remotive:
     enabled: true

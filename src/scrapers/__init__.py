@@ -8,7 +8,7 @@ from . import (
     nofluffjobs,
     justremote,
     indeed,
-    linkedin_alerts,
+    linkedin_email,
     remotive,
     himalayas,
 )
@@ -24,7 +24,7 @@ REGISTRY = {
     "nofluffjobs": nofluffjobs,
     "justremote": justremote,
     "indeed": indeed,
-    "linkedin_alerts": linkedin_alerts,
+    "linkedin_email": linkedin_email,
     "remotive": remotive,
     "himalayas": himalayas,
 }

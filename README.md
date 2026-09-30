@@ -1,87 +1,123 @@
 # Job Search Agent
 
-Автоматичний агент, який раз на день шукає нові вакансії за списком
-пошукових запитів (`search.queries` у `config.yaml`) на 12 джерелах,
-відсіює вже бачені й невідповідні (сеньйорність, роки досвіду,
-не-AI/ML вакансії — детальніше нижче) і публікує результат у вигляді
-рядків у Google Sheets та карток у Telegram. Жодного AI API для самого
-матчингу не використовується — усе на власній текстовій фільтрації,
-повністю на безкоштовних сервісах.
+Автоматичний агент, який раз на день шукає нові вакансії на 11 джерелах
+за кількома **профілями** пошуку (`profiles` у `config.yaml`), відсіює
+вже бачені й невідповідні, і публікує результат рядками в Google Sheets
+та картками в Telegram. Жодного AI API для матчингу не використовується —
+усе на власній текстовій фільтрації, повністю на безкоштовних сервісах.
 
-Щоденний запуск ініціює ЗОВНІШНІЙ сервіс cron-job.org (не внутрішній
-розклад GitHub Actions) — деталі налаштування в SETUP.md, крок 6.
+Поточні профілі:
+
+| Профіль | Що шукає | Аркуш у Sheets | Хештег |
+|---|---|---|---|
+| `ai_junior` | AI / LLM / ML, Junior / Entry level, без вимог досвіду | `Vacancies` | `#AI` |
+| `ios_middle_senior` | iOS / Swift, Middle+ / Senior | `Vacancies-iOS` | `#iOS` |
+
+Щоденний запуск ініціює ЗОВНІШНІЙ сервіс cron-job.org; внутрішній
+розклад GitHub Actions лишено як резерв із захистом від подвійного
+звіту (деталі в SETUP.md, крок 6).
 
 ## Як фільтрується список вакансій
 
-1. **Пошук** — кожне джерело опитується за всіма запитами з
-   `search.queries` (config.yaml). Це не "ключове слово десь у
-   тексті" — `keyword_matches` (`src/scrapers/base.py`) вимагає збіг
-   із межами слова.
-2. **Виключення** (`filters.exclude_keywords`) — вакансії з ознаками
-   сеньйорності ("Senior", "Lead", "Architect" тощо) чи вимогою років
-   досвіду ("3+ years", "at least 2 years") прибираються
-   (`is_excluded`).
-3. **Тематичний гейт** — AI/ML-маркер має бути саме в НАЗВІ вакансії
-   (`is_ai_title`, `src/scrapers/base.py`) — інакше вакансія
-   відкидається, навіть якщо пройшла пошук за запитом.
-4. **Дедублікація** — вакансії, вже показані в попередніх прогонах
-   (`data/seen_jobs.json`), повторно в звіт не потрапляють.
+Для кожного профілю окремо:
 
-Це навмисно СИРИЙ список — без Match Score, без рекомендації резюме,
-без AI-аналізу "чому підходить". Шар матчингу проти резюме (локальний
-і через Gemini) прибрано з пайплайна 2026-09-20 як недостовірний; сам
-код цього шару (`resume_matcher.py`, `drive_client.py`,
-`gemini_client.py`) видалено з репозиторію.
+1. **Пошук** — джерела, що вміють фільтрувати на своєму боці (Djinni —
+   категорія + рівень досвіду, DOU — категорія + досвід), отримують
+   параметри з `profiles.<name>.sources`. Решта опитується за текстовими
+   запитами `queries` (`keyword_matches` у `src/scrapers/base.py`: для
+   запитів з 1-2 слів потрібна точна фраза, для 3+ слів — усі слова).
+2. **Стоп-слова в назві** (`exclude_title`) — сеньйорність для AI-профілю
+   ("Senior", "Lead", ...), джуніорність для iOS ("Junior", "Trainee",
+   "Стажер"). Пошук із межами слова: "Lead" не збігається з "leadership".
+3. **Стоп-фрази в описі** (`exclude_text`) — "3+ years", рівень
+   англійської тощо. Для iOS-профілю список порожній.
+4. **Тематичний гейт** (`title_regex`) — маркер напрямку має бути саме в
+   НАЗВІ вакансії. Плюс `title_reject_regex` для суміжних напрямків
+   (Android/Flutter/QA/ASO для iOS).
+5. **Дедублікація** (`src/dedup.py`) — проти спільного для всіх профілів
+   `data/seen_jobs.json` і всередині прогону. ID — від пари
+   (компанія, посада), а якщо джерело не віддає компанію — від URL без
+   трекінг-параметрів.
+
+Звіт навмисно СИРИЙ — без Match Score чи AI-оцінки відповідності.
+
+## Здоров'я джерел
+
+Кількість сирих (до фільтрів) вакансій по кожному джерелу зберігається в
+`data/source_health.json`. Якщо джерело дає 0 три дні поспіль (для
+email-джерел — сім), у Telegram приходить попередження — далі див.
+SETUP.md, розділ "Що робити, якщо якийсь сайт перестав повертати вакансії".
 
 ## Швидкий старт
 
 Дивись **SETUP.md** — покроково (GitHub, Google Service Account,
-Sheets, Telegram-бот, зовнішній cron).
+Sheets, Telegram-бот, email-сповіщення, зовнішній cron).
 
 ## Структура проєкту
 
 ```
-config.yaml — ключові слова, джерела, налаштування таблиці
-src/main.py — точка входу / оркестратор
-src/scrapers/ — по одному файлу на кожне джерело вакансій
-src/resume_matcher.py — локальний розрахунок Match Score (без AI)
-src/drive_client.py — читання 12 резюме з Google Drive
-src/sheets_client.py — запис звіту в Google Sheets
-src/telegram_client.py — надсилання дайджесту в Telegram
-src/dedup.py — щоб вакансії не дублювались day-to-day
-data/seen_jobs.json — сховище "вже показаних" вакансій
-.github/workflows/ — сам workflow виконання (GitHub Actions).
-Запускається ТІЛЬКИ вручну/через
-workflow_dispatch — щоденний тригер живе поза репозиторієм, у cron-job.org
+config.yaml                 — профілі пошуку, джерела, таблиця, health, run_guard
+src/main.py                 — точка входу / оркестратор
+src/scrapers/base.py        — спільні функції: HTTP-сесія, фільтри, парсинг
+src/scrapers/<джерело>.py   — по одному файлу на джерело: search(queries, params)
+src/scrapers/email_common.py— IMAP-логіка для email-джерел
+src/dedup.py                — дедублікація day-to-day
+src/health.py               — лічильник "мовчазних" джерел
+src/sheets_client.py        — запис у Google Sheets
+src/telegram_client.py      — картки в Telegram
+data/seen_jobs.json         — сховище "вже показаних" вакансій
+data/source_health.json     — стан здоров'я джерел
+data/last_run_date.txt      — дата останнього прогону (захист від дублю)
+tests/                      — pytest: фільтри, дедублікація, парсери
+.github/workflows/          — workflow (workflow_dispatch + резервний schedule)
 ```
 
+## Джерела вакансій
 
-## Джерела вакансій (12)
+| Джерело | Спосіб | Фільтр на боці джерела |
+|---|---|---|
+| Djinni | RSS | `primary_keyword`, `exp_level` (одне значення на запит) |
+| DOU.ua | HTML, лише remote | `category`, `exp` |
+| RemoteOK | JSON API | — |
+| WeWorkRemotely | RSS | `feed` (фід категорії) |
+| Remotive | RSS | — |
+| Himalayas | RSS | — |
+| NoFluffJobs | недокументований REST | — |
+| JustRemote | HTML (SPA, ймовірно 0) | — |
+| Work.ua, Robota.ua, LinkedIn | email-сповіщення через IMAP | збережений пошук / Job alert на кожен профіль |
+| Indeed | вимкнено (немає безкоштовного шляху) | — |
 
-Djinni, DOU.ua, RemoteOK, WeWorkRemotely, NoFluffJobs, JustRemote,
-Remotive, Himalayas — скрапляться напряму.
-Robota.ua, Work.ua, LinkedIn — через email-сповіщення на скриньку
-msm.search.job@gmail.com (IMAP, одні й ті самі секрети
-WORK_UA_EMAIL_ADDRESS / WORK_UA_EMAIL_APP_PASSWORD; джерела
-розрізняються за відправником листа). Для LinkedIn потрібен Job alert
-з доставкою на email — див. docstring src/scrapers/linkedin_email.py.
-Indeed — наразі немає стабільного безкоштовного способу (закритий RSS,
-блокує скрапінг); `src/scrapers/indeed.py` завжди повертає `[]`.
+Email-джерела читають одну скриньку (секрети `WORK_UA_EMAIL_ADDRESS` /
+`WORK_UA_EMAIL_APP_PASSWORD`) і розрізняються за відправником. Вони не
+знають про профілі: вакансія з листа потрапляє в профіль, чий
+`title_regex` збігся з її назвою.
 
 ## Google Sheets — що пише код, а що вручну
 
-Код дописує лише колонки A-E: Дата додавання, Посада/Вакансія,
-Компанія, Джерело, Посилання (URL). Усі колонки правіше (CANVA, EN,
-На адаптацію, Виконано, Feedback тощо) — повністю ручні; ні
-`src/main.py`, ні `src/sheets_client.py` їх не читають і не
-перезаписують.
+Код дописує лише колонки A-E: Дата додавання, Посада/Вакансія, Компанія,
+Джерело, Посилання (URL) — у аркуш профілю (`worksheet`), який
+створюється автоматично. Колонки правіше — повністю ручні, код їх не
+читає і не перезаписує.
 
-## Локальний запуск для тесту
+## Локальний запуск
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
 export GOOGLE_SERVICE_ACCOUNT_JSON="$(cat service-account.json)"
 export TELEGRAM_BOT_TOKEN="..."
 export TELEGRAM_CHAT_ID="..."
-cd src && python main.py
+FORCE_RUN=true python src/main.py
 ```
+
+Без секретів Sheets/Telegram скрипт усе одно опитає джерела й залогує
+результат — помилки запису лише логуються.
+
+## Як додати новий профіль
+
+Скопіюй блок профілю в `config.yaml`, задай `queries`, `title_regex`,
+`exclude_title`/`exclude_text`, `worksheet`, `hashtag` і за потреби
+параметри `sources` для Djinni/DOU. Для email-джерел створи окремий
+збережений пошук / Job alert на ту саму скриньку. Додай кілька реальних
+назв вакансій у `tests/test_filters.py`, щоб зафіксувати очікувану
+поведінку.

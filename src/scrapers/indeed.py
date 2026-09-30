@@ -11,7 +11,10 @@ Indeed офіційно закрив публічний RSS кілька рок�
 """
 from .base import logger
 
+# Нуль результатів тут — норма, у звіт здоров'я джерел не потрапляє.
+ALWAYS_EMPTY = True
 
-def search(keywords: list) -> list:
+
+def search(queries: list, params: dict = None) -> list:
     logger.info("Indeed: скрапінг вимкнено (немає безкоштовного стабільного шляху), пропускаємо.")
     return []

@@ -3,21 +3,22 @@ Himalayas — офіційний публічний RSS (Atom/XML): https://hima
 Показує 100 найновіших вакансій, без пагінації, оновлюється раз на добу.
 Офіційна документація: https://himalayas.app/docs/remote-jobs-rss
 """
-import feedparser
-from .base import keyword_matches
+from .base import fetch_feed, keyword_matches
 
 FEED_URL = "https://himalayas.app/jobs/rss"
 
 
-def search(keywords: list) -> list:
-    feed = feedparser.parse(FEED_URL)
+def search(queries: list, params: dict = None) -> list:
+    feed = fetch_feed(FEED_URL)
+    if feed is None:
+        return []
     results = []
     for entry in feed.entries:
         title = entry.get("title", "")
         summary = entry.get("summary", "") or ""
         full_text = f"{title} {summary}"
 
-        if not keyword_matches(full_text, keywords):
+        if not keyword_matches(full_text, queries):
             continue
 
         # Himalayas додає свій namespace himalayasJobs:companyName —

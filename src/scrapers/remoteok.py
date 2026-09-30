@@ -1,16 +1,17 @@
 """
 RemoteOK має публічний JSON API: https://remoteok.com/api
 Перший елемент відповіді — це не вакансія, а легальний дисклеймер, тому
-його пропускаємо.
+його пропускаємо. Параметри профілю не використовуються (ендпоінт
+?tag=<tag> віддає сміття, перевірено 2026-09-30) — фільтрація за
+текстовими запитами на нашому боці.
 """
-import requests
-from .base import DEFAULT_HEADERS, keyword_matches
+from .base import get_session, keyword_matches, DEFAULT_TIMEOUT
 
 API_URL = "https://remoteok.com/api"
 
 
-def search(keywords: list) -> list:
-    resp = requests.get(API_URL, headers=DEFAULT_HEADERS, timeout=20)
+def search(queries: list, params: dict = None) -> list:
+    resp = get_session().get(API_URL, timeout=DEFAULT_TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
 
@@ -23,7 +24,7 @@ def search(keywords: list) -> list:
         tags = " ".join(item.get("tags", []) or [])
         full_text = f"{title} {description} {tags}"
 
-        if not keyword_matches(full_text, keywords):
+        if not keyword_matches(full_text, queries):
             continue
 
         results.append({

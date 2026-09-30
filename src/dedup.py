@@ -5,33 +5,35 @@
 Файл комітиться назад у репозиторій GitHub Actions'ом після кожного
 запуску (див. .github/workflows/daily_job_search.yml).
 
-ID рахується від пари (компанія, посада), а НЕ від URL. Причина зміни:
-та сама вакансія часто публікується на кількох джоб-бордах під різними
-посиланнями (Djinni + LinkedIn + сайт компанії тощо), і дедублікація
-за URL їх не ловила — в звіті з'являлись повтори однієї й тієї ж позиції.
-Дедублікація за (компанія, посада) прибирає такі повтори, але має і
-зворотний бік: якщо одна компанія реально відкриє дві РІЗНІ вакансії з
-однаковою назвою посади, у звіт потрапить лише перша з них.
+ЯК РАХУЄТЬСЯ ID:
+- якщо джерело віддало компанію — від пари (нормалізована компанія,
+  посада). Та сама вакансія часто публікується на кількох джоб-бордах
+  під різними посиланнями (Djinni + LinkedIn + сайт компанії), і
+  дедублікація за URL їх не ловила;
+- якщо компанії НЕМАЄ (Work.ua, Robota.ua, JustRemote, іноді Djinni) —
+  від канонічного URL (без query/фрагмента). Раніше такі вакансії
+  хешувались як "|<посада>", тобто ВСІ "Junior AI Engineer" від різних
+  компаній зливались в один ID, і після першої решта губились назавжди.
 
-Побічний ефект при першому запуску після цієї зміни: старі записи в
-seen_jobs.json рахувались за хешем URL, тож жодна з них не збіжиться з
-новою схемою хешування — вакансії, які раніше вже бачили, один раз
-з'являться в звіті знову, а далі дедублікація вже піде за новими ID.
+ПЕРЕХІД ЗІ СТАРОЇ СХЕМИ: для вакансій без компанії додатково
+перевіряється старий ID ("|<посада>"), щоб уже показані вакансії не
+з'явились у звіті вдруге одразу після оновлення.
 
-НОРМАЛІЗАЦІЯ НАЗВИ КОМПАНІЇ: та сама компанія на різних джерелах (або
-навіть на одному й тому ж) може бути записана по-різному — з юридичною
-формою чи без ("Lemberg Solutions" vs "Lemberg Solutions LLC" vs
-ТОВ "Lemberg Solutions"), у форматі URL-slug'а з дефісами
-("lemberg-solutions" — саме так compania витягується з посилань DOU),
-з різним регістром чи зайвими лапками/дужками. Без нормалізації такі
-написання хешуються як РІЗНІ компанії, і одна й та сама вакансія
-проходить дедублікацію двічі. normalize_company() зводить усе це до
-одного канонічного вигляду перед хешуванням.
+ПОРЯДОК: seen_ids зберігаються як СПИСОК у порядку додавання, тож при
+обрізанні до MAX_STORED_IDS випадають найстаріші, а не випадкові (set
+не має порядку — саме так було раніше).
+
+НОРМАЛІЗАЦІЯ НАЗВИ КОМПАНІЇ: та сама компанія на різних джерелах може
+бути записана по-різному ("Lemberg Solutions" / "Lemberg Solutions LLC" /
+ТОВ "Lemberg Solutions" / "lemberg-solutions"). normalize_company()
+зводить усе це до одного канонічного вигляду перед хешуванням.
 """
+import hashlib
 import json
 import os
 import re
-import hashlib
+
+from scrapers.base import canonical_url
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "seen_jobs.json")
 
@@ -39,10 +41,8 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "seen_jobs.jso
 MAX_STORED_IDS = 5000
 
 # Юридичні форми (укр + найпоширеніші англ), які прибираємо з назви
-# компанії перед порівнянням — вони не є частиною "ідентичності"
-# компанії, а лише формою запису, яка відрізняється від джерела до
-# джерела. \b-межі слова гарантують, що не зачепимо середину слова
-# (наприклад "co" не зріже "Codex").
+# компанії перед порівнянням. \b-межі слова гарантують, що не зачепимо
+# середину слова (наприклад "co" не зріже "Codex").
 _LEGAL_FORMS = [
     r"тов", r"тзов", r"пп", r"фоп", r"пат", r"ат",
     r"llc", r"inc", r"incorporated", r"ltd", r"limited",
@@ -51,8 +51,6 @@ _LEGAL_FORMS = [
 ]
 _LEGAL_FORM_RE = re.compile(r"\b(?:" + "|".join(_LEGAL_FORMS) + r")\b", re.IGNORECASE)
 
-# Лапки/дужки (ТОВ "Назва") та дефіси/підкреслення (slug'и на кшталт
-# "lemberg-solutions" з URL) — не несуть сенсу для порівняння компаній.
 _QUOTES_BRACKETS_RE = re.compile(r'["\'«»()]')
 _SEPARATORS_RE = re.compile(r"[-_]+")
 _PUNCT_RE = re.compile(r"[.,]")
@@ -61,14 +59,8 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 def normalize_company(company: str) -> str:
     """
-    Зводить назву компанії до канонічного вигляду для дедублікації:
-    нижній регістр, дефіси/підкреслення -> пробіл, прибрані лапки/дужки,
-    прибрана юридична форма (ТОВ/ФОП/LLC/Ltd/Inc/GmbH тощо), прибрана
-    зайва пунктуація, схлопнуті пробіли.
-
-    Приклади, які після нормалізації дають однаковий результат:
     "Lemberg Solutions", "lemberg-solutions", 'ТОВ "Lemberg Solutions"',
-    "Lemberg Solutions LLC" -> всі стають "lemberg solutions".
+    "Lemberg Solutions LLC" -> усі стають "lemberg solutions".
     """
     if not company:
         return ""
@@ -81,55 +73,72 @@ def normalize_company(company: str) -> str:
     return text
 
 
-def _job_id(title: str, company: str) -> str:
-    """
-    Нормалізує назву компанії (normalize_company — прибирає юридичну
-    форму, дефіси, лапки, регістр) і посаду (нижній регістр, обрізані
-    пробіли), і хешує їх разом. Порожня компанія ("" — трапляється на
-    джерелах, що не віддають компанію) не ламає логіку: тоді
-    дедублікація фактично йде лише за назвою посади.
-    """
-    normalized = f"{normalize_company(company)}|{(title or '').strip().lower()}"
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+def normalize_title(title: str) -> str:
+    return _WHITESPACE_RE.sub(" ", (title or "").strip().lower())
 
 
-def load_seen() -> set:
+def _hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def job_id(title: str, company: str, url: str = "") -> str:
+    """(компанія|посада) якщо компанія відома, інакше хеш канонічного URL."""
+    company_n = normalize_company(company)
+    if company_n:
+        return _hash(f"{company_n}|{normalize_title(title)}")
+    url_c = canonical_url(url)
+    if url_c:
+        return _hash(f"url|{url_c}")
+    return _hash(f"|{normalize_title(title)}")
+
+
+def legacy_job_id(title: str, company: str) -> str:
+    """Стара схема (до переходу на URL для порожньої компанії)."""
+    return _hash(f"{normalize_company(company)}|{normalize_title(title)}")
+
+
+def load_seen() -> list:
+    """Список ID у порядку додавання (найстаріші першими)."""
     if not os.path.exists(DATA_PATH):
-        return set()
+        return []
     with open(DATA_PATH, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError:
-            return set()
-    return set(data.get("seen_ids", []))
+            return []
+    ids = data.get("seen_ids", [])
+    # прибираємо дублі, зберігаючи порядок
+    return list(dict.fromkeys(ids))
 
 
-def save_seen(seen_ids: set) -> None:
+def save_seen(seen_ids: list) -> None:
     os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
-    ids_list = list(seen_ids)[-MAX_STORED_IDS:]
+    ids_list = list(dict.fromkeys(seen_ids))[-MAX_STORED_IDS:]
     with open(DATA_PATH, "w", encoding="utf-8") as f:
         json.dump({"seen_ids": ids_list}, f, ensure_ascii=False, indent=2)
 
 
-def filter_new_jobs(jobs: list, seen_ids: set) -> tuple:
+def filter_new_jobs(jobs: list, seen_ids: list) -> tuple:
     """
-    Повертає (нові_вакансії, оновлений_set_seen_ids).
+    Повертає (нові_вакансії, оновлений_список_seen_ids).
 
-    ВАЖЛИВО: перевірка йде проти `updated`, а не проти вихідного
-    `seen_ids`. Один і той самий job може потрапити в `jobs` кілька
-    разів за один прогін (наприклад, вакансія збігається одразу з
-    кількома ключовими словами, і скрапер сканує сторінку пошуку
-    окремо під кожне слово). Якщо звірятись лише з `seen_ids`
-    (як було раніше), такі внутрішньопрогонні дублі не відсіювались —
-    обидва входження проходили далі й потрапляли у звіт двічі,
-    з різним текстом Gemini-аналізу (бо Gemini викликався для кожного
-    входження окремо). Звірка з `updated` ловить і ці дублі теж.
+    Перевірка йде проти вже оновленого набору, а не лише проти вихідного
+    seen_ids: та сама вакансія може потрапити в `jobs` кілька разів за
+    один прогін (кілька запитів, кілька джерел, кілька профілів) — такі
+    внутрішньопрогонні дублі теж відсіюються.
     """
+    updated = list(seen_ids)
+    known = set(updated)
     new_jobs = []
-    updated = set(seen_ids)
     for job in jobs:
-        jid = _job_id(job.get("title", ""), job.get("company", ""))
-        if jid not in updated:
-            new_jobs.append(job)
-            updated.add(jid)
+        title = job.get("title", "")
+        company = job.get("company", "")
+        jid = job_id(title, company, job.get("url", ""))
+        if jid in known:
+            continue
+        if not normalize_company(company) and legacy_job_id(title, company) in known:
+            continue
+        new_jobs.append(job)
+        updated.append(jid)
+        known.add(jid)
     return new_jobs, updated

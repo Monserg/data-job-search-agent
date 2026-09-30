@@ -1,24 +1,27 @@
 """
 WeWorkRemotely — офіційний публічний RSS.
 Загальний фід (усі категорії): https://weworkremotely.com/remote-jobs.rss
-Фільтрація за ключовими словами відбувається вже на нашому боці, бо
-фід не підтримує пошук за keyword у query-рядку.
+Через params.feed можна вказати фід категорії, напр.
+https://weworkremotely.com/categories/remote-programming-jobs.rss
+Фільтрація за ключовими словами відбувається на нашому боці.
 """
-import feedparser
-from .base import keyword_matches
+from .base import fetch_feed, keyword_matches
 
 FEED_URL = "https://weworkremotely.com/remote-jobs.rss"
 
 
-def search(keywords: list) -> list:
-    feed = feedparser.parse(FEED_URL)
+def search(queries: list, params: dict = None) -> list:
+    params = params or {}
+    feed = fetch_feed(params.get("feed") or FEED_URL)
+    if feed is None:
+        return []
     results = []
     for entry in feed.entries:
         title = entry.get("title", "")
         summary = entry.get("summary", "") or ""
         full_text = f"{title} {summary}"
 
-        if not keyword_matches(full_text, keywords):
+        if not keyword_matches(full_text, queries):
             continue
 
         # Заголовки WWR часто у форматі "Компанія: Посада"

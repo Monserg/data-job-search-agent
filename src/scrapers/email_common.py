@@ -1,16 +1,17 @@
 """
 Спільна логіка для email-скраперів (IMAP + Gmail App Password).
 
-Зараз використовується work_ua_email.py, robota_ua_email.py та
+Використовується work_ua_email.py, robota_ua_email.py та
 linkedin_email.py — усі читають ТУ САМУ поштову скриньку
 (WORK_UA_EMAIL_ADDRESS / WORK_UA_EMAIL_APP_PASSWORD), розрізняючи
-джерела за відправником (sender_filter). Назва змінних середовища лишена "WORK_UA_*" з
-історичних причин (перший email-скрапер був саме для work.ua) --
-секрети НЕ треба перейменовувати чи дублювати для нових джерел, що
-падають у ту саму скриньку; кожен новий email-скрапер просто передає
-свій sender_filter/link_pattern/source_name у fetch_unread_jobs().
-Якщо розмітка листа складніша за "кожне <a> = вакансія" (як у LinkedIn),
-можна передати власний parser (див. параметр parser нижче).
+джерела за відправником (sender_filter). Назва змінних середовища
+лишена "WORK_UA_*" з історичних причин — секрети НЕ треба
+перейменовувати для нових джерел, що падають у ту саму скриньку.
+
+ПРАПОРЕЦЬ \\Seen: лист читається через BODY.PEEK[] (НЕ ставить \\Seen)
+і позначається прочитаним явно, лише ПІСЛЯ успішного парсингу. Раніше
+звичайний FETCH BODY[] ставив \\Seen одразу — якщо парсинг падав, лист
+губився назавжди.
 """
 import email
 import imaplib
@@ -19,6 +20,8 @@ import os
 from email.header import decode_header
 
 from bs4 import BeautifulSoup
+
+from .base import canonical_url
 
 logger = logging.getLogger("job_agent.scrapers")
 
@@ -63,8 +66,9 @@ def parse_jobs_from_html(html: str, link_pattern, source_name: str) -> list:
     """
     Витягує вакансії з HTML-тіла одного листа-сповіщення. Кожен
     <a href>, чий href підпадає під link_pattern, вважається окремою
-    вакансією; текст посилання -- title. company НЕ витягується
-    (лист, ймовірно, не кодує компанію в href) -- лишається "".
+    вакансією; текст посилання — title. Посилання канонізується (без
+    трекінг-параметрів), щоб дедублікація за URL працювала між листами.
+    company НЕ витягується — лишається "".
     """
     soup = BeautifulSoup(html, "html.parser")
     seen_urls = set()
@@ -74,16 +78,17 @@ def parse_jobs_from_html(html: str, link_pattern, source_name: str) -> list:
         href = a["href"]
         if not link_pattern.search(href):
             continue
-        if href in seen_urls:
+        url = canonical_url(href)
+        if url in seen_urls:
             continue
         title = a.get_text(strip=True)
         if not title or len(title) < 3:
             continue
-        seen_urls.add(href)
+        seen_urls.add(url)
         jobs.append({
             "title": title,
             "company": "",
-            "url": href,
+            "url": url,
             "source": source_name,
             "text": title,
             "date": "",
@@ -92,36 +97,23 @@ def parse_jobs_from_html(html: str, link_pattern, source_name: str) -> list:
 
 
 def fetch_unread_jobs(sender_filter, link_pattern, source_name: str,
-                       address_env: str = "WORK_UA_EMAIL_ADDRESS",
-                       password_env: str = "WORK_UA_EMAIL_APP_PASSWORD",
-                       parser=None) -> list:
+                      address_env: str = "WORK_UA_EMAIL_ADDRESS",
+                      password_env: str = "WORK_UA_EMAIL_APP_PASSWORD",
+                      parser=None) -> list:
     """
     Підключається по IMAP до Gmail, читає НЕПРОЧИТАНІ листи від
-    sender_filter, парсить з кожного вакансії через parser
-    (за замовчуванням -- parse_jobs_from_html).
+    sender_filter (рядок або список рядків), парсить з кожного вакансії
+    через parser (за замовчуванням — parse_jobs_from_html) і лише після
+    успішного парсингу позначає лист \\Seen.
 
-    sender_filter -- рядок АБО список рядків (кілька відправників одного
-    сервісу, напр. LinkedIn шле з різних адрес). Листи від усіх
-    відправників об'єднуються без дублів.
-
-    parser -- функція з тією ж сигнатурою, що й parse_jobs_from_html:
-    parser(html, link_pattern, source_name) -> list[dict].
-
-    Звичайний (не .PEEK) FETCH BODY[] сам позначає прочитаний лист
-    \\Seen (RFC 3501) -- тож при наступному запуску той самий лист
-    вдруге не потрапить у UNSEEN-вибірку.
-
-    Якщо address_env/password_env не задані -- повертає [] і логує
-    попередження, не ламаючи решту пайплайну (той самий підхід, що
-    й indeed.py).
+    Якщо address_env/password_env не задані — повертає [] і логує,
+    не ламаючи решту пайплайну.
     """
     address = os.environ.get(address_env)
     app_password = os.environ.get(password_env)
     if not address or not app_password:
-        logger.info(
-            "%s (email): %s / %s не задані -- пропускаю.",
-            source_name, address_env, password_env,
-        )
+        logger.info("%s (email): %s / %s не задані — пропускаю.",
+                    source_name, address_env, password_env)
         return []
 
     try:
@@ -141,21 +133,17 @@ def fetch_unread_jobs(sender_filter, link_pattern, source_name: str,
         for sender in senders:
             status, msg_ids = imap.search(None, "UNSEEN", f'FROM "{sender}"')
             if status != "OK":
-                logger.warning(
-                    "%s (email): IMAP SEARCH (%s) повернув %s", source_name, sender, status,
-                )
+                logger.warning("%s (email): IMAP SEARCH (%s) повернув %s", source_name, sender, status)
                 continue
             found = msg_ids[0].split()
-            logger.info(
-                "%s (email): знайдено %d непрочитаних листів від %s",
-                source_name, len(found), sender,
-            )
+            logger.info("%s (email): знайдено %d непрочитаних листів від %s",
+                        source_name, len(found), sender)
             for mid in found:
                 if mid not in id_list:
                     id_list.append(mid)
 
         for msg_id in id_list:
-            status, msg_data = imap.fetch(msg_id, "(BODY[])")
+            status, msg_data = imap.fetch(msg_id, "(BODY.PEEK[])")
             if status != "OK" or not msg_data or not msg_data[0]:
                 logger.warning("%s (email): не вдалось прочитати лист %s", source_name, msg_id)
                 continue
@@ -165,22 +153,24 @@ def fetch_unread_jobs(sender_filter, link_pattern, source_name: str,
             html = extract_html_body(msg)
             if not html:
                 subject = decode_mime_words(msg.get("Subject", ""))
-                logger.warning(
-                    "%s (email): лист '%s' без text/html частини -- пропускаю",
-                    source_name, subject,
-                )
+                logger.warning("%s (email): лист '%s' без text/html частини — пропускаю",
+                               source_name, subject)
                 continue
 
-            all_jobs.extend(parse(html, link_pattern, source_name))
+            try:
+                jobs = parse(html, link_pattern, source_name)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("%s (email): помилка парсингу листа %s (%s) — лишаю непрочитаним",
+                               source_name, msg_id, exc)
+                continue
+            all_jobs.extend(jobs)
+            imap.store(msg_id, "+FLAGS", "\\Seen")
     finally:
-        try:
-            imap.close()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            imap.logout()
-        except Exception:  # noqa: BLE001
-            pass
+        for closer in (imap.close, imap.logout):
+            try:
+                closer()
+            except Exception:  # noqa: BLE001
+                pass
 
     logger.info("%s (email): усього витягнуто %d вакансій", source_name, len(all_jobs))
     return all_jobs

@@ -13,7 +13,7 @@ from . import (
     himalayas,
 )
 
-# Ім'я в config.yaml -> модуль зі search()
+# Ім'я в config.yaml -> модуль зі search(queries, params)
 REGISTRY = {
     "djinni": djinni,
     "dou": dou,

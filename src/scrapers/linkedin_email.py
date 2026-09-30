@@ -61,6 +61,11 @@ from .email_common import fetch_unread_jobs
 
 SOURCE_NAME = "LinkedIn"
 
+# Не залежить від профілю: лист уже відфільтрований Job alert'ом на боці
+# LinkedIn; main.py опитує джерело один раз і роздає вакансії профілям
+# за їхнім title_regex. На кожен профіль — окремий Job alert.
+PROFILE_AGNOSTIC = True
+
 SENDER_FILTERS = [
     "jobalerts-noreply@linkedin.com",
     "jobs-listings@linkedin.com",
@@ -172,8 +177,8 @@ def parse_linkedin_jobs(html: str, link_pattern, source_name: str) -> list:
     return list(jobs.values())
 
 
-def search(queries: list) -> list:
-    """queries ігнорується -- фільтрація вже відбулась на боці LinkedIn
+def search(queries: list, params: dict = None) -> list:
+    """queries/params ігноруються -- фільтрація вже відбулась на боці LinkedIn
     (email-сповіщення налаштовані на Job alert). Сигнатура зберігається
     заради сумісності з REGISTRY у src/main.py."""
     return fetch_unread_jobs(

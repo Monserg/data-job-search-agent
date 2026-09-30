@@ -1,22 +1,28 @@
 """
-Надсилає ОДНЕ окреме повідомлення на КОЖНУ нову вакансію (замість одного
-великого дайджесту), у стилі "картки" — жирний заголовок, іконки-емодзі
-для полів, посилання внизу.
+Надсилає ОДНЕ окреме повідомлення на КОЖНУ нову вакансію у стилі
+"картки" — жирний заголовок, іконки-емодзі для полів, посилання внизу.
+Перед картками кожного профілю йде заголовок з назвою профілю й
+кількістю; в кінці — попередження про "мовчазні" джерела, якщо є.
+
+Помилка відправки однієї картки НЕ зупиняє решту: картка логується як
+невдала, надсилання продовжується.
 
 Потрібні змінні середовища:
   TELEGRAM_BOT_TOKEN — токен бота від @BotFather
   TELEGRAM_CHAT_ID   — chat_id, куди слати (свій особистий або груповий)
 """
+import html
+import logging
 import os
 import time
-import html
+
 import requests
+
+logger = logging.getLogger("job_agent.telegram")
 
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
-# Пауза між повідомленнями, щоб не впертись у Telegram flood control
-# (офіційний ліміт — ~30 повідомлень/сек в різні чати, але для одного
-# чату безпечніше йти повільніше).
+# Пауза між повідомленнями, щоб не впертись у Telegram flood control.
 SEND_DELAY_SECONDS = 1.2
 
 
@@ -25,11 +31,13 @@ def _esc(text: str) -> str:
     return html.escape(str(text), quote=False)
 
 
-def build_job_message(job: dict) -> str:
-    """
-    Формує одне повідомлення-картку для однієї вакансії — сирі дані,
-    без жодної оцінки відповідності (матчинг прибрано 2026-09-20).
-    """
+def _hashtag(text: str) -> str:
+    tag = "".join(ch for ch in (text or "") if ch.isalnum())
+    return f"#{tag}" if tag else ""
+
+
+def build_job_message(job: dict, profile_hashtag: str = "") -> str:
+    """Формує одне повідомлення-картку для однієї вакансії."""
     title = _esc(job.get("title", "Без назви"))
     company = _esc(job.get("company") or "—")
     source = _esc(job.get("source", ""))
@@ -39,40 +47,15 @@ def build_job_message(job: dict) -> str:
         f"📌 <b>{title}</b> в {company}",
         "",
         f"🌍 <b>Джерело:</b> {source}",
+        "",
     ]
-
-    lines.append("")
     if url:
         lines.append(f'🔗 <a href="{url}">Переглянути вакансію</a>')
 
-    hashtag_source = "".join(ch for ch in source if ch.isalnum())
-    if hashtag_source:
-        lines.append(f"\n#{hashtag_source}")
-
+    tags = " ".join(t for t in (_hashtag(profile_hashtag), _hashtag(source)) if t)
+    if tags:
+        lines.append(f"\n{tags}")
     return "\n".join(lines)
-
-
-def send_job_cards(jobs: list) -> None:
-    """
-    Надсилає по одному повідомленню на кожну вакансію зі списку jobs
-    (відсортованого за джерелом+назвою, як формує main.py).
-    Якщо jobs порожній — надсилає одне коротке "нічого не знайдено".
-    """
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    url = API_URL.format(token=token)
-
-    if not jobs:
-        _send_single(url, chat_id, "📭 Сьогодні нових вакансій за твоїми ключовими словами не знайдено.")
-        return
-
-    _send_single(url, chat_id, f"📋 <b>Нові вакансії на сьогодні: {len(jobs)}</b>")
-    time.sleep(SEND_DELAY_SECONDS)
-
-    for job in jobs:
-        text = build_job_message(job)
-        _send_single(url, chat_id, text)
-        time.sleep(SEND_DELAY_SECONDS)
 
 
 def _send_single(url: str, chat_id: str, text: str, retry: int = 1) -> None:
@@ -95,20 +78,48 @@ def _send_single(url: str, chat_id: str, text: str, retry: int = 1) -> None:
     resp.raise_for_status()
 
 
-# Лишаємо старі функції для зворотної сумісності (якщо десь ще викликаються).
-def build_digest(new_jobs: list, spreadsheet_url: str = "") -> str:
-    if not new_jobs:
-        return "📭 Сьогодні нових вакансій за твоїми ключовими словами не знайдено."
-    lines = [f"📋 <b>Нові вакансії на сьогодні: {len(new_jobs)}</b>\n"]
-    for job in new_jobs:
-        lines.append(build_job_message(job))
-    if spreadsheet_url:
-        lines.append(f"\n📊 Повна таблиця: {spreadsheet_url}")
-    return "\n\n".join(lines)
+def _try_send(url: str, chat_id: str, text: str, what: str) -> bool:
+    try:
+        _send_single(url, chat_id, text)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Telegram: не вдалось надіслати %s: %s", what, exc)
+        return False
+    finally:
+        time.sleep(SEND_DELAY_SECONDS)
 
 
-def send_digest(text: str) -> None:
+def send_report(profile_results: list, warnings: list = None) -> int:
+    """
+    profile_results: список пар (profile_cfg: dict, jobs: list) у порядку
+    профілів. warnings: рядки попереджень (здоров'я джерел тощо).
+    Повертає кількість вакансій, які НЕ вдалось надіслати.
+    """
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     url = API_URL.format(token=token)
-    _send_single(url, chat_id, text[:4000])
+
+    total = sum(len(jobs) for _, jobs in profile_results)
+    failed = 0
+
+    if total == 0:
+        _try_send(url, chat_id,
+                  "📭 Сьогодні нових вакансій за жодним профілем не знайдено.",
+                  "повідомлення 'нічого нового'")
+    else:
+        for profile, jobs in profile_results:
+            if not jobs:
+                continue
+            name = _esc(profile.get("name", ""))
+            tag = _hashtag(profile.get("hashtag", ""))
+            _try_send(url, chat_id, f"📋 <b>{name}: нових вакансій {len(jobs)}</b> {tag}".strip(),
+                      f"заголовок профілю {name}")
+            for job in jobs:
+                if not _try_send(url, chat_id, build_job_message(job, profile.get("hashtag", "")),
+                                 f"картку {job.get('url', '')}"):
+                    failed += 1
+
+    for warning in warnings or []:
+        _try_send(url, chat_id, f"⚠️ {_esc(warning)}", "попередження")
+
+    return failed

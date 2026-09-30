@@ -1,30 +1,37 @@
 name: Daily Job Search
 
-# ВАЖЛИВО: внутрішній розклад GitHub Actions (`schedule:`) навмисно
-# ВИДАЛЕНО. GitHub Actions cron ненадійний для цього репо — реальні
-# запуски затримувались на 4–7+ годин відносно заданого часу (ціль
-# 9:00-10:00 Київ фактично стартувала о 14:55-17:10), і без окремого
-# захисту від подвійного запуску це спричиняло ДВА звіти на день:
-# один вчасно (через зовнішній тригер), другий — із затримкою (через
-# внутрішній GitHub cron).
-#
-# Єдиний спосіб запуску тепер — workflow_dispatch. Щоденний тригер
-# о 9:00 Europe/Kyiv живе ПОЗА цим репозиторієм: зовнішній сервіс
-# cron-job.org раз на день робить
-#   POST /repos/<owner>/<repo>/actions/workflows/daily_job_search.yml/dispatches
-# з тілом {"ref": "main"} — це і запускає джоб нижче. Налаштування
-# самого cron-job.org зберігаються на його стороні, не тут.
-# Ручний запуск лишається доступним так само — Actions → Daily Job
-# Search → Run workflow.
+# Основний щоденний тригер — ЗОВНІШНІЙ cron-job.org (POST workflow_dispatch
+# о 9:00 Europe/Kyiv, див. SETUP.md крок 6). Внутрішній `schedule:` нижче —
+# лише РЕЗЕРВ на випадок, якщо зовнішній тригер не спрацював (протермінований
+# PAT тощо): GitHub-cron запізнюється на години, але подвійного звіту вже
+# не буде — main.py виходить без звіту, якщо прогін за сьогодні вже був
+# (data/last_run_date.txt, run_guard у config.yaml). Ручний запуск через
+# "Run workflow" ставить FORCE_RUN=true і захист обходить.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Запустити, навіть якщо прогін за сьогодні вже був"
+        type: boolean
+        default: true
+  schedule:
+    # 08:30 UTC = 10:30 Kyiv влітку / 11:30 взимку — свідомо ПІСЛЯ основного
+    # тригера, щоб у нормі просто вийти по run_guard.
+    - cron: "30 8 * * *"
 
 permissions:
-  contents: write   # потрібно, щоб закомітити оновлений data/seen_jobs.json
+  contents: write   # щоб закомітити оновлені data/*.json
+
+# Два одночасні прогони (напр. зовнішній + резервний) не повинні
+# змагатись за коміт data/ — другий чекає на перший.
+concurrency:
+  group: daily-job-search
+  cancel-in-progress: false
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
@@ -33,9 +40,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q
 
       - name: Run job search agent
         env:
@@ -44,12 +55,25 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WORK_UA_EMAIL_ADDRESS: ${{ secrets.WORK_UA_EMAIL_ADDRESS }}
           WORK_UA_EMAIL_APP_PASSWORD: ${{ secrets.WORK_UA_EMAIL_APP_PASSWORD }}
+          # workflow_dispatch: значення input'у force (за замовчуванням true);
+          # schedule: input'ів немає -> порожньо -> run_guard активний.
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || '' }}
         run: python src/main.py
 
-      - name: Commit updated seen_jobs.json
+      - name: Commit updated data files
+        if: always()
         run: |
           git config user.name "job-search-agent-bot"
           git config user.email "actions@github.com"
-          git add data/seen_jobs.json
-          git diff --staged --quiet || git commit -m "chore: update seen jobs [skip ci]"
-          git push
+          git add data/
+          if git diff --staged --quiet; then
+            echo "Немає змін у data/ — коміт не потрібен."
+            exit 0
+          fi
+          git commit -m "chore: update seen jobs [skip ci]"
+          # Якщо main встигли оновити (інший прогін) — підтягуємо і пушимо знову.
+          for attempt in 1 2 3; do
+            git push && exit 0
+            git pull --rebase origin main || exit 1
+          done
+          exit 1

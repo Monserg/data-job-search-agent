@@ -1,87 +1,84 @@
 """
-DOU.ua — пошук вакансій за ключовим словом, ТІЛЬКИ серед вакансій, які
-DOU сам позначає як "віддалено" (query-параметр remote=):
-https://jobs.dou.ua/vacancies/?remote=&search=<keyword>
+DOU.ua — лише вакансії, які DOU сам позначає як "віддалено" (параметр
+remote): https://jobs.dou.ua/vacancies/?remote&search=<keyword>
 Посилання на вакансії: /companies/<company>/vacancies/<id>/
 
-ЗМІНА (root-cause фікс двох проблем, знайдених вручну на прикладі
-https://jobs.dou.ua/companies/l7-united/vacancies/369003/ — гібридна
-вакансія "Аналітик з кіберризиків та захисту даних", Київ, з бейджем
-"deftech" на сторінці вакансії):
+Фільтрація НА БОЦІ ДЖЕРЕЛА через параметри профілю
+(config.yaml -> profiles.<name>.sources.dou):
+    category : категорія DOU ("iOS/macOS", "Python", "Data Science", ...).
+               Якщо задано — замість пошуку за текстовими запитами
+               відкривається сторінка категорії (один запит замість
+               одного на кожен query).
+    exp      : досвід — "0-1", "1-3", "3-5", "5plus" (рядок або список;
+               DOU приймає одне значення за запит — на кожне робиться
+               окремий запит, результати зливаються за URL).
 
-1) ФОРМАТ РОБОТИ (офіс/гібрид проходили у звіт, хоча пріоритет —
-   виключно віддалена робота).
-   Раніше запит ішов у загальний розділ /vacancies/?search=..., де є
-   і офісні, і гібридні, і віддалені вакансії — сам DOU ніяк це не
-   розрізняв на нашому боці. Замість того, щоб вгадувати "віддаленість"
-   за текстом (ненадійна евристика — на сторінці вакансії формат роботи
-   часто прихований у довільній фразі на кшталт "гібридний формат"),
-   тепер запит одразу йде з офіційним фільтром самого DOU — параметром
-   `remote=` (порожнє значення — це те, що реально шле сам сайт при
-   натисканні чекбокса "Віддалено" в UI; перевірено вручну: ця сама
-   вакансія L7 United НЕ потрапляє у видачу з цим параметром, а без
-   нього — потрапляє). Це фільтрація на рівні джерела, а не патч
-   поверх тексту.
-
-2) СТОП-СЛОВО "deftech" (exclude_keywords у config.yaml) не спрацьовувало.
-   Причина: `text` цього скрапера раніше складався лише з
-   {заголовок посилання зі сторінки СПИСКУ} + {ключове слово пошуку} —
-   сама сторінка списку вакансій DOU не містить бейджів/опису, вони є
-   тільки на сторінці ОКРЕМОЇ вакансії (бейдж "deftech" там — це
-   окреме посилання-тег над заголовком, підтверджено вручну на прикладі
-   вище). Тепер для кожної знайденої вакансії скрапер довантажує саму
-   сторінку вакансії (base.fetch_page_text) і додає її повний текст до
-   `text` — тож exclude_keywords, tier23_exclude_keywords,
-   requires_experience тощо в main.py тепер бачать реальний вміст
-   сторінки вакансії, а не лише заголовок посилання зі списку.
-
-Побічні ефекти:
-- Ще один HTTP-запит НА КОЖНУ ЗНАЙДЕНУ ВАКАНСІЮ (довантаження сторінки
-  вакансії) — DOU-прогін став повільнішим і залежним від доступності
-  jobs.dou.ua для кожної окремої сторінки вакансії, не лише для сторінки
-  пошуку. Один і той самий URL вакансії часто трапляється під кількома
-  ключовими словами (напр. і "data analyst", і "data quality") —
-  довантажується він лише ОДИН раз за прогін завдяки локальному кешу
-  `page_text_cache` нижче, решта звернень беруть готовий текст з кешу.
-- Помилка довантаження ОКРЕМОЇ сторінки вакансії не зупиняє весь
-  скрапер — просто для неї `text` лишається коротким (заголовок +
-  ключове слово), як і раніше (fetch_page_text ловить помилки сама і
-  повертає "").
+Для кожної знайденої вакансії довантажується сторінка вакансії, але
+в `text` потрапляє лише ТІЛО опису (селектор VACANCY_BODY_SELECTOR),
+а не вся сторінка: раніше туди потрапляли навігація та блок "інші
+вакансії компанії", і слово "Senior" у сусідній вакансії хибно
+виключало junior-позицію. Один URL довантажується один раз за прогін
+(кеш page_text_cache).
 """
 import time
 import urllib.parse
+
 from .base import html_link_scrape, fetch_page_text
 
 BASE_URL = "https://jobs.dou.ua"
 LINK_PATTERN = r"/companies/[^/]+/vacancies/\d+"
 COMPANY_PATTERN = r"/companies/([^/]+)/vacancies/\d+"
+VACANCY_BODY_SELECTOR = "div.vacancy-section, div.b-vacancy, div.l-vacancy"
 
-# Пауза між довантаженнями окремих сторінок вакансій, щоб не бомбардувати
-# jobs.dou.ua запитами занадто швидко (ввічливий rate-limit на своєму боці).
 PAGE_FETCH_DELAY_SECONDS = 0.3
 
 
-def search(keywords: list) -> list:
+def _as_list(value) -> list:
+    if value is None or value == "":
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _list_urls(queries: list, params: dict) -> list:
+    category = params.get("category")
+    levels = _as_list(params.get("exp")) or [None]
+    urls = []
+    if category:
+        for lvl in levels:
+            q = [("remote", ""), ("category", category)]
+            if lvl:
+                q.append(("exp", lvl))
+            urls.append(f"{BASE_URL}/vacancies/?{urllib.parse.urlencode(q)}")
+        return urls
+    for kw in queries or []:
+        for lvl in levels:
+            q = [("remote", ""), ("search", kw)]
+            if lvl:
+                q.append(("exp", lvl))
+            urls.append(f"{BASE_URL}/vacancies/?{urllib.parse.urlencode(q)}")
+    return urls
+
+
+def search(queries: list, params: dict = None) -> list:
+    params = params or {}
     all_results = []
-    # Кеш "URL вакансії -> повний текст сторінки" в межах ОДНОГО прогону
-    # search(): та сама вакансія часто збігається з кількома ключовими
-    # словами, і без кешу довантажувалась би по кілька разів даремно.
+    seen_urls = set()
     page_text_cache = {}
 
-    for kw in keywords:
-        q = urllib.parse.quote(kw)
-        url = f"{BASE_URL}/vacancies/?remote=&search={q}"
-        results = html_link_scrape(url, LINK_PATTERN, BASE_URL, "DOU.ua", kw,
-                                    company_pattern=COMPANY_PATTERN)
-
+    for url in _list_urls(queries, params):
+        results = html_link_scrape(url, LINK_PATTERN, BASE_URL, "DOU.ua",
+                                   company_pattern=COMPANY_PATTERN)
         for job in results:
             job_url = job["url"]
+            if job_url in seen_urls:
+                continue
+            seen_urls.add(job_url)
             if job_url not in page_text_cache:
-                page_text_cache[job_url] = fetch_page_text(job_url)
+                page_text_cache[job_url] = fetch_page_text(
+                    job_url, content_selector=VACANCY_BODY_SELECTOR)
                 time.sleep(PAGE_FETCH_DELAY_SECONDS)
             full_text = page_text_cache[job_url]
             if full_text:
                 job["text"] = f"{job['text']} {full_text}"
-
-        all_results.extend(results)
+            all_results.append(job)
     return all_results

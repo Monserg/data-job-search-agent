@@ -3,11 +3,14 @@
 A: Дата додавання | B: Посада/Вакансія | C: Компанія | D: Джерело |
 E: Посилання (URL)
 
-Колонки F-J (CANVA/EN/На адаптацію/Виконано/Feedback) заповнюються
-вручну і цим кодом не чіпаються.
+Аркуш задається профілем (profiles.<name>.worksheet у config.yaml) і
+створюється автоматично, якщо його немає. Колонки правіше E
+заповнюються вручну і цим кодом не чіпаються.
 
-Авторизація — той самий Service Account, що й для Google Drive
-(GOOGLE_SERVICE_ACCOUNT_JSON), просто з іншим scope.
+Значення пишуться як RAW: назва вакансії, що починається з "=" чи "+",
+інакше була б інтерпретована Google Sheets як формула.
+
+Авторизація — Service Account (GOOGLE_SERVICE_ACCOUNT_JSON).
 """
 import json
 import os
@@ -41,10 +44,11 @@ def _get_or_create_worksheet(gc, spreadsheet_id: str, worksheet_name: str):
     try:
         ws = sh.worksheet(worksheet_name)
     except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=worksheet_name, rows=1000, cols=len(HEADER_ROW))
-        ws.append_row(HEADER_ROW)
-    if ws.row_count == 0 or not ws.row_values(1):
-        ws.append_row(HEADER_ROW)
+        ws = sh.add_worksheet(title=worksheet_name, rows=1000, cols=10)
+        ws.append_row(HEADER_ROW, value_input_option="RAW")
+        return ws
+    if not ws.row_values(1):
+        ws.append_row(HEADER_ROW, value_input_option="RAW")
     return ws
 
 
@@ -54,4 +58,4 @@ def append_rows(spreadsheet_id: str, worksheet_name: str, rows: list) -> None:
         return
     gc = _get_client()
     ws = _get_or_create_worksheet(gc, spreadsheet_id, worksheet_name)
-    ws.append_rows(rows, value_input_option="USER_ENTERED")
+    ws.append_rows(rows, value_input_option="RAW")

@@ -1,9 +1,10 @@
-"""Парсери скраперів без мережі: Djinni (компанія з og:title), email-листи, LinkedIn."""
+"""Парсери скраперів без мережі: Djinni (компанія з og:title), Just Join IT, email-листи, LinkedIn."""
 import re
 
 from scrapers import REGISTRY
 from scrapers.djinni import _feed_urls, company_from_og_title
 from scrapers.dou import _list_urls
+from scrapers import justjoin
 from scrapers.email_common import parse_jobs_from_html
 from scrapers.linkedin_email import parse_linkedin_jobs
 
@@ -52,6 +53,68 @@ def test_dou_category_replaces_query_search():
 def test_dou_without_category_searches_each_query():
     urls = _list_urls(["A", "B"], {"exp": "0-1"})
     assert len(urls) == 2 and "search=A" in urls[0] and "exp=0-1" in urls[0]
+
+
+# ---------------------------------------------------------------- Just Join IT
+
+JJ_ITEM = {
+    "slug": "acme-senior-ios-engineer-warszawa-mobile",
+    "title": "Senior iOS Engineer",
+    "companyName": "Acme",
+    "workplaceType": "remote",
+    "experienceLevel": "senior",
+    "isOpenToHireUkrainians": True,
+    "publishedAt": "2026-09-30T14:00:11.38493Z",
+    "requiredSkills": [{"name": "Swift"}, {"name": "SwiftUI"}],
+    "niceToHaveSkills": [{"name": "Combine"}],
+}
+
+
+def test_justjoin_one_request_per_category_and_level():
+    plans = justjoin.request_plans(["iOS Developer"], {"categories": ["mobile"],
+                                                        "experience_levels": ["mid", "senior"]})
+    assert [(p["categories"], p["experienceLevels"]) for p in plans] == [("mobile", "mid"), ("mobile", "senior")]
+    assert all(p["sortBy"] == "publishedAt" and "keywords" not in p for p in plans)
+
+
+def test_justjoin_without_categories_searches_each_query():
+    plans = justjoin.request_plans(["iOS Developer", "Swift"], {"experience_levels": "junior"})
+    assert [(p["keywords"], p["experienceLevels"]) for p in plans] == [("iOS Developer", "junior"), ("Swift", "junior")]
+    assert justjoin.request_plans([], {}) == [{"sortBy": "publishedAt", "orderBy": "descending"}]
+
+
+def test_justjoin_item_to_job_includes_skills_and_date():
+    job = justjoin.item_to_job(JJ_ITEM, "3+ years of Swift")
+    assert job["title"] == "Senior iOS Engineer" and job["company"] == "Acme"
+    assert job["url"] == "https://justjoin.it/job-offer/acme-senior-ios-engineer-warszawa-mobile"
+    assert job["source"] == "Just Join IT" and job["date"] == "2026-09-30"
+    assert "Swift, SwiftUI, Combine" in job["text"] and job["text"].endswith("3+ years of Swift")
+
+
+def test_justjoin_client_filter_workplace_ukrainians_age_and_dedup():
+    hybrid = dict(JJ_ITEM, slug="b", workplaceType="hybrid")
+    not_ukr = dict(JJ_ITEM, slug="c", isOpenToHireUkrainians=False)
+    old = dict(JJ_ITEM, slug="d", publishedAt="2026-09-01T00:00:00Z")
+    # Та сама вакансія в іншому місті: інший slug, той самий guid —
+    # або взагалі окреме оголошення (інший guid) з тією ж компанією й назвою.
+    other_city = dict(JJ_ITEM, slug="acme-senior-ios-engineer-krakow-mobile", guid="g1")
+    other_posting = dict(JJ_ITEM, slug="acme-senior-ios-engineer-gdansk-mobile", guid="g2")
+    items = [dict(JJ_ITEM, guid="g1"), other_city, other_posting, hybrid, not_ukr, old]
+    cutoff = justjoin.age_cutoff(14, today=__import__("datetime").date(2026, 10, 1))
+    assert cutoff == __import__("datetime").date(2026, 9, 17)
+
+    kept = justjoin.client_filter(items, {"workplace_types": ["remote"], "ukrainians_only": True}, cutoff)
+    assert [i["slug"] for i in kept] == [JJ_ITEM["slug"]]
+    # hybrid/not_ukr/old мають ту саму назву й компанію, тому без фільтрів
+    # лишається лише перший; інша назва — окрема вакансія.
+    assert [i["slug"] for i in justjoin.client_filter(items, {}, None)] == [JJ_ITEM["slug"]]
+    assert [i["slug"] for i in justjoin.client_filter([hybrid, dict(hybrid, slug="e", title="Android Dev")], {}, None)] == ["b", "e"]
+    assert justjoin.age_cutoff(0) is None and justjoin.age_cutoff(None) is None
+
+
+def test_justjoin_strip_html():
+    assert justjoin.strip_html('<p class="ql-header-3"><strong>Wymagania</strong></p><ul><li><p>3+ years</p></li></ul>') == "Wymagania 3+ years"
+    assert justjoin.strip_html("") == ""
 
 
 # ---------------------------------------------------------------- email (Work.ua / Robota.ua)

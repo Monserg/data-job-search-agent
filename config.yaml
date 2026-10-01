@@ -14,7 +14,8 @@
 #   queries            — текстові запити для джерел, що шукають за текстом
 #                        (RemoteOK, WeWorkRemotely, Remotive, Himalayas,
 #                        NoFluffJobs, JustRemote, DOU без category, Djinni
-#                        без primary_keyword). 1-2 слова = точна фраза,
+#                        без primary_keyword, Just Join IT без categories).
+#                        1-2 слова = точна фраза,
 #                        3+ слів = усі слова присутні (див. base.py).
 #   title_regex        — тематичний гейт: regex МАЄ збігтися з НАЗВОЮ
 #                        вакансії, інакше вона відкидається (для всіх
@@ -132,6 +133,17 @@ profiles:
         # Теги NFJ + рівні; вакансії переважно з Польщі (remote).
         requirement: ["AI", "LLM", "Machine Learning"]
         seniority: ["Trainee", "Junior"]
+      justjoin:
+        # Категорії Just Join IT (ai/data/python) × рівень junior — один
+        # запит на кожну пару. Лише remote (хочеш і гібрид у Польщі —
+        # додай "hybrid"). Опис довантажується, бо exclude_text профілю
+        # перевіряє роки досвіду / рівень англійської; max_age_days
+        # обмежує кількість таких довантажень.
+        categories: ["ai", "data", "python"]
+        experience_levels: ["junior"]
+        workplace_types: ["remote"]
+        max_age_days: 14
+        with_description: true
 
   # ----------------------------------------------------------------
   # 2. iOS Developer — Middle+ / Senior
@@ -184,6 +196,13 @@ profiles:
       nofluffjobs:
         requirement: ["iOS", "Swift"]
         seniority: ["Mid", "Senior", "Expert"]
+      justjoin:
+        # Категорія mobile включає Android/Flutter — їх відсіює
+        # title_reject_regex. Опис не потрібен (exclude_text порожній).
+        categories: ["mobile"]
+        experience_levels: ["mid", "senior"]
+        workplace_types: ["remote"]
+        max_age_days: 14
 
 # Джерела, які потрібно опитувати. enabled: false вимикає джерело для
 # всіх профілів, якщо його розмітка зламалась.
@@ -201,6 +220,8 @@ sources:
   work_ua_email:
     enabled: true
   nofluffjobs:
+    enabled: true
+  justjoin:
     enabled: true
   justremote:
     enabled: true

@@ -20,7 +20,11 @@ Europe/Kyiv робить POST workflow_dispatch (див. SETUP.md, крок 6).
 4. Дописати рядки в аркуш профілю у Google Sheets.
 5. Надіслати картки в Telegram (заголовок на профіль + картки) і
    попередження про джерела, що кілька днів дають 0.
-6. Зберегти seen_jobs.json і source_health.json.
+6. Зберегти seen_jobs.json і source_health.json. Вакансії, картки яких
+   НЕ дійшли в Telegram, у seen_jobs.json не потрапляють — підуть у
+   наступний звіт. Якщо не дійшло ЖОДНЕ повідомлення (неправильний
+   chat_id, бот не адмін каналу), прогін завершується з кодом 1, щоб
+   GitHub Actions став червоним, а не мовчки "успішним".
 
 Звіт навмисно СИРИЙ — без Match Score чи AI-оцінки відповідності
 (шар матчингу прибрано 2026-09-20 як недостовірний).
@@ -32,7 +36,7 @@ from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from config_loader import load_config
-from dedup import load_seen, save_seen, filter_new_jobs
+from dedup import load_seen, save_seen, filter_new_jobs, remove_jobs
 import health
 from scrapers import REGISTRY
 from scrapers.base import safe_call, find_excluded, title_matches
@@ -203,17 +207,27 @@ def main() -> int:
     for w in warnings:
         logger.warning(w)
 
+    failed_jobs, delivered = [], 0
     try:
-        failed = telegram_client.send_report(
+        failed_jobs, delivered = telegram_client.send_report(
             [(profile, by_profile.get(key, [])) for key, profile in profiles.items()],
             warnings,
         )
-        if failed:
-            logger.error("Telegram: %d карток не надіслано", failed)
     except Exception as exc:  # noqa: BLE001
         logger.error("Не вдалось надіслати Telegram-повідомлення: %s", exc)
+        failed_jobs = list(new_jobs)
+
+    if failed_jobs:
+        logger.error("Telegram: %d карток не надіслано — їх ID не зберігаю, "
+                     "підуть у наступний звіт", len(failed_jobs))
+        updated_seen = remove_jobs(updated_seen, failed_jobs)
 
     save_seen(updated_seen)
+
+    if delivered == 0:
+        logger.error("Telegram: не доставлено жодного повідомлення. Перевір TELEGRAM_CHAT_ID "
+                     "і права бота (Run workflow → telegram_check = true покаже причину).")
+        return 1
     logger.info("Готово.")
     return 0
 

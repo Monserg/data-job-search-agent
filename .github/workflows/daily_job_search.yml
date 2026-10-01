@@ -10,7 +10,12 @@ name: Daily Job Search
 # реальної користі. Ручний запуск — Actions → Daily Job Search →
 # Run workflow.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      telegram_check:
+        description: "Лише перевірити Telegram (getMe/getChat/тестове повідомлення), без пошуку"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # щоб закомітити оновлені data/*.json
@@ -41,7 +46,15 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Check Telegram connection
+        if: inputs.telegram_check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python src/telegram_check.py
+
       - name: Run job search agent
+        if: ${{ !inputs.telegram_check }}
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -51,7 +64,7 @@ jobs:
         run: python src/main.py
 
       - name: Commit updated data files
-        if: always()
+        if: always() && !inputs.telegram_check
         run: |
           git config user.name "job-search-agent-bot"
           git config user.email "actions@github.com"

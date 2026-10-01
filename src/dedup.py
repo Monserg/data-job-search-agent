@@ -142,3 +142,12 @@ def filter_new_jobs(jobs: list, seen_ids: list) -> tuple:
         updated.append(jid)
         known.add(jid)
     return new_jobs, updated
+
+
+def remove_jobs(seen_ids: list, jobs: list) -> list:
+    """
+    Прибирає зі списку seen_ids ID вакансій `jobs` (картки яких не дійшли
+    в Telegram), щоб вони знову потрапили в наступний звіт.
+    """
+    drop = {job_id(j.get("title", ""), j.get("company", ""), j.get("url", "")) for j in jobs}
+    return [jid for jid in seen_ids if jid not in drop]

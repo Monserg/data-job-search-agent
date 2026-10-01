@@ -71,3 +71,15 @@ def test_load_seen_tolerates_missing_and_broken_file(tmp_path, monkeypatch):
     assert load_seen() == []
     path.write_text("{not json")
     assert load_seen() == []
+
+
+def test_remove_jobs_unmarks_undelivered_cards():
+    delivered = {"title": "Junior AI Engineer", "company": "Acme", "url": "https://a/1"}
+    failed = {"title": "AI Developer", "company": "Beta", "url": "https://b/2"}
+    new_jobs, updated = filter_new_jobs([delivered, failed], ["old"])
+    assert len(new_jobs) == 2
+    kept = dedup.remove_jobs(updated, [failed])
+    assert kept == ["old", job_id("Junior AI Engineer", "Acme", "https://a/1")]
+    # невідправлена вакансія знову вважається новою
+    again, _ = filter_new_jobs([failed], kept)
+    assert again == [failed]

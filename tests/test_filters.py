@@ -137,6 +137,69 @@ def test_ios_profile_keeps_years_of_experience(profiles):
     assert _passes(ios, "Senior iOS Developer", "Senior iOS Developer, 5+ years of Swift") is True
 
 
+@pytest.mark.parametrize("title,expected", [
+    # Реальні назви з Djinni (JavaScript/Fullstack, 5y) і DOU (Front End,
+    # Full Stack, 5plus) станом на 2026-10-01.
+    ("Senior Frontend Engineer", True),
+    ("Senior Front End Developer", True),
+    ("Senior Front-End Engineer (Pixi.js)", True),
+    ("React Front-End Engineer", True),
+    ("Senior Frontend Developer (React / Next.js / PWA)", True),
+    ("Senior Full-Stack Engineer (Node.js/Express, React, TypeScript)", True),
+    ("Senior Fullstack Engineer (React+Node.js)", True),
+    ("Full Stack Developer", True),
+    ("Senior NodeJS Engineer", True),
+    ("Senior Backend Developer | Node.js, TypeScript, Temporal", True),   # бекенд на Node лишаємо
+    ("Lead Frontend Engineer", True),                                     # Lead лишаємо
+    ("Middle Frontend Engineer", True),
+    ("Middle Full-Stack Developer (Node.js+Python+React)", False),        # інший бекенд-стек
+    (".NET Full-Stack Software Engineer (IRC303351)", False),
+    ("Full Stack Engineer (Java & JavaScript)", False),
+    ("Senior Full-Stack Engineer (React / PHP-Laravel)", False),
+    ("Senior Fullstack Developer (React + Python)", False),
+    ("Tech Lead Full-Stack Rails Engineer", False),
+    ("Fullstack Developer (Golang + React/Next.js)", False),
+    ("Senior Developer (TS/React)", True),
+    ("React Native Developer", False),                  # мобільна розробка
+    ("Senior Full-Stack Engineer (Flutter, Python & AWS)", False),
+    ("Senior AQA Engineer (TypeScript + Node.js)", False),
+    ("Full-Stack Shopify Developer", False),
+    ("Magento Frontend Developer (Hyvä Theme)", False),
+    ("Senior Frontend Developer (vue.js)", False),       # інший фреймворк
+    ("Senior Angular Developer", False),
+    ("Senior Full-Stack Engineer (Angular/Node.js)", False),
+    ("Senior Backend Developer", False),                 # без маркера
+    ("Senior Platform Engineer (Platform Experience)", False),
+    ("Web Developer", False),
+    ("Junior React Developer", False),
+    ("Jr. Frontend Developer", False),
+    ("Principal Frontend Engineer", False),
+    ("Staff Frontend Engineer", False),
+    ("Frontend Architect", False),
+    ("Engineering Manager (Frontend)", False),
+    ("QA Automation Engineer (JS)", False),
+    ("Product Designer (React Design System)", False),
+    ("Senior iOS Developer", False),
+    ("Junior AI Engineer", False),
+])
+def test_frontend_profile_titles(profiles, title, expected):
+    assert _passes(profiles["frontend_senior"], title) is expected
+
+
+def test_frontend_profile_keeps_years_but_rejects_phd(profiles):
+    fe = profiles["frontend_senior"]
+    assert _passes(fe, "Senior React Developer", "Senior React Developer, 5+ years of React") is True
+    assert _passes(fe, "Senior React Developer", "Senior React Developer. PhD in CS required") is False
+
+
+def test_profiles_do_not_overlap_on_core_titles(profiles):
+    """Та сама назва не має проходити в два профілі одночасно."""
+    cases = ["Junior AI Engineer", "Senior iOS Developer", "Senior React Developer"]
+    for title in cases:
+        hits = [key for key, prof in profiles.items() if _passes(prof, title)]
+        assert len(hits) == 1, (title, hits)
+
+
 def test_apply_profile_filters_reports_reasons(profiles):
     jobs = [
         {"title": "Senior iOS Developer", "text": ""},

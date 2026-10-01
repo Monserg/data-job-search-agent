@@ -12,6 +12,7 @@
 |---|---|---|---|
 | `ai_junior` | AI / LLM / ML, Junior / Entry level, без вимог досвіду | `Vacancies` | `#AI` |
 | `ios_middle_senior` | iOS / Swift, Middle+ / Senior | `Vacancies-iOS` | `#iOS` |
+| `frontend_senior` | Frontend / Full-stack (React, TypeScript, Node), Middle+ / Senior | `Vacancies-Frontend` | `#Frontend` |
 
 Щоденний запуск ініціює ВИКЛЮЧНО зовнішній сервіс cron-job.org — через
 `workflow_dispatch`. Внутрішнього розкладу GitHub Actions немає (деталі
@@ -77,7 +78,7 @@ cron-job.org, деталі в SETUP.md)
 | Джерело | Спосіб | Фільтр на боці джерела |
 |---|---|---|
 | Djinni | RSS | `primary_keyword`, `exp_level` (одне значення на запит) |
-| DOU.ua | HTML, лише remote | `category`, `exp` |
+| DOU.ua | HTML, лише remote | `category` (рядок або список), `exp` |
 | RemoteOK | JSON API | — |
 | WeWorkRemotely | RSS | `feed` (фід категорії) |
 | Remotive | RSS | — |

@@ -197,7 +197,8 @@ def main() -> int:
             continue
         try:
             sheets_client.append_rows(spreadsheet_id, profile["worksheet"],
-                                      jobs_to_sheet_rows(jobs, today))
+                                      jobs_to_sheet_rows(jobs, today),
+                                      first_data_row=profile.get("sheet_first_data_row", 2))
         except Exception as exc:  # noqa: BLE001
             logger.error("[%s] Не вдалось записати у Google Sheets: %s", key, exc)
 

@@ -39,7 +39,8 @@ Account), Telegram Bot API.
 
 ID таблиці вже вписаний у `config.yaml → google_sheets.spreadsheet_id`.
 Агент сам створить аркуш (worksheet) кожного профілю (`Vacancies` для
-AI, `Vacancies-iOS` для iOS — поле `worksheet` у `config.yaml`) і
+AI, `Vacancies-iOS` для iOS, `Vacancies-Frontend` для фронтенду — поле
+`worksheet` у `config.yaml`) і
 заголовки колонок A–E при першому запуску, якщо їх ще немає. Колонки
 правіше E — CANVA/EN/На адаптацію/Виконано/Feedback тощо — керуються
 вручну, код їх не чіпає.
@@ -81,14 +82,15 @@ repository secret**. Додай п'ять секретів:
 
 Work.ua, Robota.ua та LinkedIn не скрапляться напряму — агент читає
 листи-сповіщення зі скриньки з Кроку 5 через IMAP. Для КОЖНОГО профілю
-(AI Junior, iOS Middle+/Senior) створи окреме сповіщення на ту саму
+(AI Junior, iOS Middle+/Senior, Frontend/Full-stack Middle+/Senior) створи
+окреме сповіщення на ту саму
 адресу:
 
 | Сайт | Де | Що задати |
 |---|---|---|
-| Work.ua | Збережені пошуки → дзвіночок "Сповіщення" + "Ел. пошта" | AI: "AI Engineer", без досвіду. iOS: "iOS Developer", досвід від 3 років |
+| Work.ua | Збережені пошуки → дзвіночок "Сповіщення" + "Ел. пошта" | AI: "AI Engineer", без досвіду. iOS: "iOS Developer", досвід від 3 років. Frontend: "Frontend Developer" і "React Developer", досвід від 3 років |
 | Robota.ua | Збережений пошук → email-сповіщення | те саме, віддалено |
-| LinkedIn | Jobs → пошук → тумблер "Job alert" → Email, Daily | AI: Experience level Entry/Associate. iOS: Mid-Senior |
+| LinkedIn | Jobs → пошук → тумблер "Job alert" → Email, Daily | AI: Experience level Entry/Associate. iOS: Mid-Senior. Frontend: "Frontend Engineer", Mid-Senior |
 
 Лист не повідомляє, з якого сповіщення він прийшов: вакансія потрапляє в
 той профіль, чий `title_regex` збігся з її назвою. Агент читає лише

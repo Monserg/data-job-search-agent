@@ -50,6 +50,13 @@ def test_dou_category_replaces_query_search():
     assert "exp=5plus" in urls[1]
 
 
+def test_dou_category_list_one_request_per_category_and_level():
+    urls = _list_urls([], {"category": ["Front End", "Full Stack"], "exp": ["3-5", "5plus"]})
+    assert len(urls) == 4
+    assert urls[0] == "https://jobs.dou.ua/vacancies/?remote=&category=Front+End&exp=3-5"
+    assert urls[3] == "https://jobs.dou.ua/vacancies/?remote=&category=Full+Stack&exp=5plus"
+
+
 def test_dou_without_category_searches_each_query():
     urls = _list_urls(["A", "B"], {"exp": "0-1"})
     assert len(urls) == 2 and "search=A" in urls[0] and "exp=0-1" in urls[0]

@@ -5,10 +5,12 @@ remote): https://jobs.dou.ua/vacancies/?remote&search=<keyword>
 
 Фільтрація НА БОЦІ ДЖЕРЕЛА через параметри профілю
 (config.yaml -> profiles.<name>.sources.dou):
-    category : категорія DOU ("iOS/macOS", "Python", "Data Science", ...).
-               Якщо задано — замість пошуку за текстовими запитами
-               відкривається сторінка категорії (один запит замість
-               одного на кожен query).
+    category : категорія DOU ("iOS/macOS", "Python", "Data Science", ...)
+               — рядок або список. Якщо задано — замість пошуку за
+               текстовими запитами відкривається сторінка категорії
+               (один запит на кожну категорію × exp, а не на кожен
+               query). "Full Stack" у випадаючому списку DOU немає,
+               але параметр працює (перевірено 2026-10-01).
     exp      : досвід — "0-1", "1-3", "3-5", "5plus" (рядок або список;
                DOU приймає одне значення за запит — на кожне робиться
                окремий запит, результати зливаються за URL).
@@ -40,15 +42,16 @@ def _as_list(value) -> list:
 
 
 def _list_urls(queries: list, params: dict) -> list:
-    category = params.get("category")
+    categories = _as_list(params.get("category"))
     levels = _as_list(params.get("exp")) or [None]
     urls = []
-    if category:
-        for lvl in levels:
-            q = [("remote", ""), ("category", category)]
-            if lvl:
-                q.append(("exp", lvl))
-            urls.append(f"{BASE_URL}/vacancies/?{urllib.parse.urlencode(q)}")
+    if categories:
+        for category in categories:
+            for lvl in levels:
+                q = [("remote", ""), ("category", category)]
+                if lvl:
+                    q.append(("exp", lvl))
+                urls.append(f"{BASE_URL}/vacancies/?{urllib.parse.urlencode(q)}")
         return urls
     for kw in queries or []:
         for lvl in levels:

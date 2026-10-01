@@ -204,6 +204,128 @@ profiles:
         workplace_types: ["remote"]
         max_age_days: 14
 
+  # ----------------------------------------------------------------
+  # 3. Frontend / Full-stack (React, TypeScript, Node) — Middle+ / Senior
+  # ----------------------------------------------------------------
+  # Джерело ключових слів: my_search_keywords.xlsx (аркуш з
+  # фронтенд-запитами). До маркерів з таблиці (react, typescript, ts,
+  # javascript, js, node, next, mern, nest) додано frontend/front-end,
+  # fullstack/full-stack і варіанти з ".js" — інакше запити
+  # "Senior Frontend Engineer" / "Full-stack Developer" не проходили б
+  # тематичний гейт, бо в таких назвах технологія часто не згадується.
+  frontend_senior:
+    name: "Frontend/Full-stack Middle+/Senior"
+    hashtag: "#Frontend"
+    worksheet: "Vacancies-Frontend"
+
+    queries:
+      # З таблиці
+      - "Frontend Engineer"
+      - "Front-end Engineer"
+      - "Senior Front-end Engineer"
+      - "Senior Frontend Engineer"
+      - "Senior Frontend Developer"
+      - "Senior Front-end Developer"
+      - "Full-stack Developer"
+      - "Full-stack Engineer"
+      - "Senior React Developer"
+      - "Senior React Engineer"
+      # Варіанти написання (1-2 слова = точна фраза, тому "Full-stack"
+      # не збігається з "Full Stack" / "Fullstack")
+      - "Frontend Developer"
+      - "Front-end Developer"
+      - "Front End Engineer"
+      - "Front End Developer"
+      - "Full Stack Developer"
+      - "Full Stack Engineer"
+      - "Fullstack Developer"
+      - "Fullstack Engineer"
+      - "React Developer"
+      - "React Engineer"
+      - "TypeScript Developer"
+      - "TypeScript Engineer"
+      - "Node.js Developer"
+      - "Node.js Engineer"
+      - "Next.js Developer"
+
+    # Маркер стеку або напрямку має бути в назві.
+    title_regex: |-
+      (?<![a-z0-9])(react|react\.?js|typescript|ts|javascript|js|
+      node|node\.?js|next|next\.?js|nest|nest\.?js|mern|
+      frontend|front[\s-]+end|fullstack|full[\s-]+stack|
+      фронтенд|фронт[\s-]+енд|фулстек|фул[\s-]+стек)(?![a-z0-9])
+    # Інші фронтенд-фреймворки (напрямок — React/TypeScript/Node),
+    # мобільна розробка (React Native / Flutter), CMS-платформи та
+    # не-розробницькі ролі, де "frontend"/"js" теж буває в назві
+    # (реальні приклади з прогону 2026-10-01: "React Native Developer",
+    # "Senior AQA Engineer (TypeScript + Node.js)", "Full-Stack Shopify
+    # Developer", "Magento Frontend Developer").
+    # Інший бекенд-стек у назві (.NET/Java/PHP/Python/Rails/Go...) теж
+    # відкидається: напрямок — JS/TS і на фронті, і на беку (рішення
+    # 2026-10-01; таких було 77 із 297 у першому прогоні). Чисто
+    # бекендові Node.js/Nest-вакансії та "Lead" навмисно лишаються.
+    title_reject_regex: |-
+      (?<![a-z0-9])(angular|vue|vue\.?js|nuxt|svelte|
+      react[\s-]*native|flutter|
+      wordpress|drupal|magento|shopify|
+      \.net|dotnet|c#|csharp|java(?!script)|kotlin|scala|
+      php|laravel|symfony|python|django|fastapi|
+      ruby|rails|golang|go|rust|elixir|
+      qa|aqa|tester|testing|automation|support|recruiter|designer|
+      marketing|manager|product owner|analyst|sales)(?![a-z0-9])
+
+    exclude_title:
+      # З таблиці
+      - "Junior"
+      - "Jr."
+      - "Jr"
+      - "Principal"
+      - "Staff"
+      - "Director"
+      - "Manager"
+      - "Architect"
+      # Як в iOS-профілі: стажування та українські варіанти
+      - "Trainee"
+      - "Intern"
+      - "Internship"
+      - "Entry level"
+      - "Entry-level"
+      - "Стажер"
+      - "Стажист"
+      - "Молодший"
+      - "Джуніор"
+
+    exclude_text:
+      - "PhD"
+      - "Ph.D."
+
+    sources:
+      djinni:
+        # Перевірено 2026-10-01: категорія фронтенду на Djinni зветься
+        # "JavaScript"; "React" / "Front-End" Djinni не знає і віддає
+        # ВЕСЬ фід. "Node.js" — переважно бекенд, лишаються лише назви
+        # з маркером (NodeJS/Nest/Fullstack). Один запит на кожну пару
+        # категорія × рівень.
+        primary_keyword: ["JavaScript", "Fullstack", "Node.js"]
+        exp_level: ["3y", "5y"]
+      dou:
+        # "Front End" є у списку категорій DOU; "Full Stack" у списку
+        # немає, але параметр працює (перевірено 2026-10-01).
+        category: ["Front End", "Full Stack"]
+        exp: ["3-5", "5plus"]
+      nofluffjobs:
+        requirement: ["React", "TypeScript", "JavaScript", "Node.js", "Next.js"]
+        seniority: ["Mid", "Senior", "Expert"]
+      justjoin:
+        # Категорія javascript включає Angular/Vue/бекенд — їх відсіює
+        # title_regex / title_reject_regex. Опис не довантажується:
+        # єдина стоп-фраза (PhD) у фронтенд-вакансіях майже не
+        # трапляється, а довантаження — по запиту на кожну вакансію.
+        categories: ["javascript"]
+        experience_levels: ["mid", "senior"]
+        workplace_types: ["remote"]
+        max_age_days: 14
+
 # Джерела, які потрібно опитувати. enabled: false вимикає джерело для
 # всіх профілів, якщо його розмітка зламалась.
 sources:

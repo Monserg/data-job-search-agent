@@ -225,10 +225,3 @@ google_sheets:
 health:
   zero_days_warn: 3
   zero_days_warn_email: 7
-
-# Захист від подвійного звіту за день: якщо сьогодні (за timezone) прогін
-# уже був, повторний запуск виходить без звіту. Ручний запуск через
-# Actions → Run workflow ставить FORCE_RUN=true і цей захист обходить.
-run_guard:
-  enabled: true
-  timezone: "Europe/Kyiv"

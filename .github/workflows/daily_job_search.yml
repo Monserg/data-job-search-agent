@@ -1,29 +1,22 @@
 name: Daily Job Search
 
-# Основний щоденний тригер — ЗОВНІШНІЙ cron-job.org (POST workflow_dispatch
-# о 9:00 Europe/Kyiv, див. SETUP.md крок 6). Внутрішній `schedule:` нижче —
-# лише РЕЗЕРВ на випадок, якщо зовнішній тригер не спрацював (протермінований
-# PAT тощо): GitHub-cron запізнюється на години, але подвійного звіту вже
-# не буде — main.py виходить без звіту, якщо прогін за сьогодні вже був
-# (data/last_run_date.txt, run_guard у config.yaml). Ручний запуск через
-# "Run workflow" ставить FORCE_RUN=true і захист обходить.
+# ЄДИНИЙ тригер — ЗОВНІШНІЙ сервіс cron-job.org, який щодня о 9:00
+# Europe/Kyiv робить POST workflow_dispatch (див. SETUP.md, крок 6).
+# Жодного внутрішнього `schedule:` тут НЕМАЄ і не повинно бути —
+# GitHub-cron на цьому репозиторії ненадійний: запуски затримувались на
+# 4-7+ годин (звіти о 15:00 і навіть 17:10 замість ранку), а тримати
+# його як "резерв" паралельно із зовнішнім тригером лише ускладнює
+# пайплайн (знадобився окремий захист від подвійного звіту) без
+# реальної користі. Ручний запуск — Actions → Daily Job Search →
+# Run workflow.
 on:
-  workflow_dispatch:
-    inputs:
-      force:
-        description: "Запустити, навіть якщо прогін за сьогодні вже був"
-        type: boolean
-        default: true
-  schedule:
-    # 08:30 UTC = 10:30 Kyiv влітку / 11:30 взимку — свідомо ПІСЛЯ основного
-    # тригера, щоб у нормі просто вийти по run_guard.
-    - cron: "30 8 * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: write   # щоб закомітити оновлені data/*.json
 
-# Два одночасні прогони (напр. зовнішній + резервний) не повинні
-# змагатись за коміт data/ — другий чекає на перший.
+# Захищає коміт data/ від конфлікту, якщо хтось запустить вручну, поки
+# вже йде щоденний прогін від cron-job.org.
 concurrency:
   group: daily-job-search
   cancel-in-progress: false
@@ -55,9 +48,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WORK_UA_EMAIL_ADDRESS: ${{ secrets.WORK_UA_EMAIL_ADDRESS }}
           WORK_UA_EMAIL_APP_PASSWORD: ${{ secrets.WORK_UA_EMAIL_APP_PASSWORD }}
-          # workflow_dispatch: значення input'у force (за замовчуванням true);
-          # schedule: input'ів немає -> порожньо -> run_guard активний.
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || '' }}
         run: python src/main.py
 
       - name: Commit updated data files
@@ -71,7 +61,6 @@ jobs:
             exit 0
           fi
           git commit -m "chore: update seen jobs [skip ci]"
-          # Якщо main встигли оновити (інший прогін) — підтягуємо і пушимо знову.
           for attempt in 1 2 3; do
             git push && exit 0
             git pull --rebase origin main || exit 1

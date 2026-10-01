@@ -55,19 +55,19 @@ Sheets, Telegram-бот, email-сповіщення, зовнішній cron).
 
 ## Структура проєкту
 
-config.yaml — профілі пошуку, джерела, таблиця, health
-src/main.py — точка входу / оркестратор
-src/scrapers/base.py — спільні функції: HTTP-сесія, фільтри, парсинг
-src/scrapers/<джерело>.py — по одному файлу на джерело: search(queries, params)
-src/scrapers/email_common.py— IMAP-логіка для email-джерел
-src/dedup.py — дедублікація day-to-day
-src/health.py — лічильник "мовчазних" джерел
-src/sheets_client.py — запис у Google Sheets
-src/telegram_client.py — картки в Telegram
-data/seen_jobs.json — сховище "вже показаних" вакансій
-data/source_health.json — стан здоров'я джерел
-tests/ — pytest: фільтри, дедублікація, парсери
-.github/workflows/ — workflow (запускається ТІЛЬКИ через
+- config.yaml — профілі пошуку, джерела, таблиця, health
+- src/main.py — точка входу / оркестратор
+- src/scrapers/base.py — спільні функції: HTTP-сесія, фільтри, парсинг
+- src/scrapers/<джерело>.py — по одному файлу на джерело: search(queries, params)
+- src/scrapers/email_common.py— IMAP-логіка для email-джерел
+- src/dedup.py — дедублікація day-to-day
+- src/health.py — лічильник "мовчазних" джерел
+- src/sheets_client.py — запис у Google Sheets
+- src/telegram_client.py — картки в Telegram
+- data/seen_jobs.json — сховище "вже показаних" вакансій
+- data/source_health.json — стан здоров'я джерел
+- tests/ — pytest: фільтри, дедублікація, парсери
+- .github/workflows/ — workflow (запускається ТІЛЬКИ через
 workflow_dispatch; щоденний тригер — зовнішній
 cron-job.org, деталі в SETUP.md)
 

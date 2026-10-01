@@ -1,4 +1,4 @@
-"""Telegram: невідправлені картки повертаються, причина помилки читабельна, check_connection."""
+"""Telegram: список у розгортуваній цитаті, розбиття на частини, невідправлені вакансії повертаються, check_connection."""
 import pytest
 
 import telegram_client
@@ -42,11 +42,16 @@ def test_all_sent(monkeypatch):
     post, calls = _fake_post(lambda u, j: _Resp(200, {"ok": True}))
     monkeypatch.setattr(telegram_client.requests, "post", post)
     failed, delivered = telegram_client.send_report([(PROFILE, [JOB_A, JOB_B])])
-    assert failed == [] and delivered == 3  # заголовок + 2 картки
+    assert failed == [] and delivered == 1  # одне повідомлення на профіль
     assert all(c[1]["chat_id"] == "-1001" for c in calls)  # chat_id обрізано
+    text = calls[0][1]["text"]
+    assert text.startswith("📋 <b>AI Junior: нових вакансій 2</b> #AI\n<blockquote expandable>")
+    assert text.endswith("</blockquote>")
+    assert '• <a href="https://a/1">Junior AI Engineer</a> — Acme (Djinni)' in text
+    assert "частина" not in text
 
 
-def test_failed_cards_are_returned_not_lost(monkeypatch):
+def test_failed_message_returns_all_its_jobs(monkeypatch):
     def replies(url, j):
         if "b/2" in j["text"]:
             return _Resp(400, {"ok": False, "description": "Bad Request: chat not found"})
@@ -54,7 +59,30 @@ def test_failed_cards_are_returned_not_lost(monkeypatch):
     post, _ = _fake_post(replies)
     monkeypatch.setattr(telegram_client.requests, "post", post)
     failed, delivered = telegram_client.send_report([(PROFILE, [JOB_A, JOB_B])])
-    assert failed == [JOB_B] and delivered == 2
+    assert failed == [JOB_A, JOB_B] and delivered == 0
+
+
+def test_long_list_is_split_into_parts_under_telegram_limit():
+    jobs = [{"title": f"Senior Frontend Developer (React / Next.js / TypeScript) #{i}",
+             "company": f"Company number {i}", "url": f"https://x/{i}", "source": "Just Join IT"}
+            for i in range(199)]
+    messages = telegram_client.build_profile_messages({"name": "Frontend", "hashtag": "#Frontend"}, jobs)
+    assert len(messages) > 1
+    assert [j for _, chunk in messages for j in chunk] == jobs           # нічого не загублено
+    for idx, (text, chunk) in enumerate(messages, start=1):
+        assert telegram_client.visible_length(text) <= 4096
+        assert len(chunk) <= telegram_client.MAX_LINES_PER_MESSAGE
+        assert f"нових вакансій 199</b> #Frontend (частина {idx}/{len(messages)})" in text
+        assert text.count("<blockquote expandable>") == 1
+
+
+def test_job_line_escapes_html_and_handles_missing_fields():
+    line = telegram_client.build_job_line({"title": "C++ & <AI> Dev", "company": "", "url": "", "source": "DOU"})
+    assert line == "• <b>C++ &amp; &lt;AI&gt; Dev</b> (DOU)"
+
+
+def test_visible_length_ignores_tags_and_entities():
+    assert telegram_client.visible_length('<a href="https://very/long/url">ab</a> &amp; c') == 6
 
 
 def test_nothing_delivered_when_chat_is_wrong(monkeypatch, caplog):

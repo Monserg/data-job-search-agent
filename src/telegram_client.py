@@ -1,16 +1,20 @@
 """
-Надсилає ОДНЕ окреме повідомлення на КОЖНУ нову вакансію у стилі
-"картки" — жирний заголовок, іконки-емодзі для полів, посилання внизу.
-Перед картками кожного профілю йде заголовок з назвою профілю й
-кількістю; в кінці — попередження про "мовчазні" джерела, якщо є.
+Надсилає ОДНЕ повідомлення на КОЖЕН профіль: жирний заголовок з назвою
+напрямку, кількістю та хештегом, а під ним — РОЗГОРТУВАНА ЦИТАТА
+(<blockquote expandable>) зі списком вакансій, по рядку на вакансію
+(посилання-назва, компанія, джерело). Telegram показує таку цитату
+згорнутою (перші кілька рядків + стрілка), тап по стрілці розгортає
+й згортає список — без кнопок і без постійно запущеного бота.
 
-Помилка відправки однієї картки НЕ зупиняє решту: картка логується як
-невдала, надсилання продовжується.
+Ліміт Telegram — 4096 символів видимого тексту на повідомлення, тому
+довгий список ріжеться на кілька повідомлень ("частина 2/3"), кожне зі
+своєю цитатою. В кінці — попередження про "мовчазні" джерела, якщо є.
 
-Якщо картку не вдалось надіслати, вона повертається в main, щоб її ID
-НЕ потрапив у seen_jobs.json і вакансія пішла в наступний звіт, а не
-загубилась назавжди (саме так зникли 23 вакансії 2026-10-01, коли
-chat_id указував на канал, де бот не був адміністратором).
+Помилка відправки одного повідомлення НЕ зупиняє решту; вакансії з
+повідомлення, що не дійшло, повертаються в main, щоб їх ID НЕ потрапили
+в seen_jobs.json і вони пішли в наступний звіт, а не загубились (саме
+так зникли 23 вакансії 2026-10-01, коли chat_id указував на канал, де
+бот не був адміністратором).
 
 Потрібні змінні середовища:
   TELEGRAM_BOT_TOKEN — токен бота від @BotFather
@@ -21,6 +25,7 @@ chat_id указував на канал, де бот не був адмініс
 import html
 import logging
 import os
+import re
 import time
 
 import requests
@@ -33,6 +38,12 @@ API_URL = API_BASE + "sendMessage"
 # Пауза між повідомленнями, щоб не впертись у Telegram flood control.
 SEND_DELAY_SECONDS = 1.2
 
+# Ліміт Telegram — 4096 символів ПІСЛЯ розбору HTML (теги й href не
+# рахуються). Беремо із запасом; рядків на повідомлення обмежуємо, щоб
+# розгорнутий список лишався читабельним.
+MAX_VISIBLE_CHARS = 3800
+MAX_LINES_PER_MESSAGE = 30
+
 
 def _esc(text: str) -> str:
     """Екранує текст для HTML parse_mode Telegram."""
@@ -44,26 +55,68 @@ def _hashtag(text: str) -> str:
     return f"#{tag}" if tag else ""
 
 
-def build_job_message(job: dict, profile_hashtag: str = "") -> str:
-    """Формує одне повідомлення-картку для однієї вакансії."""
-    title = _esc(job.get("title", "Без назви"))
-    company = _esc(job.get("company") or "—")
-    source = _esc(job.get("source", ""))
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def visible_length(text: str) -> int:
+    """Довжина тексту так, як її рахує Telegram: без HTML-тегів і сутностей."""
+    return len(html.unescape(_TAG_RE.sub("", text)))
+
+
+def build_job_line(job: dict) -> str:
+    """Один рядок списку: назва-посилання, компанія, джерело."""
+    title = _esc(job.get("title") or "Без назви")
     url = job.get("url", "")
+    head = f'<a href="{_esc(url)}">{title}</a>' if url else f"<b>{title}</b>"
+    company = (job.get("company") or "").strip()
+    source = (job.get("source") or "").strip()
+    line = f"• {head}"
+    if company:
+        line += f" — {_esc(company)}"
+    if source:
+        line += f" ({_esc(source)})"
+    return line
 
-    lines = [
-        f"📌 <b>{title}</b> в {company}",
-        "",
-        f"🌍 <b>Джерело:</b> {source}",
-        "",
-    ]
-    if url:
-        lines.append(f'🔗 <a href="{url}">Переглянути вакансію</a>')
 
-    tags = " ".join(t for t in (_hashtag(profile_hashtag), _hashtag(source)) if t)
-    if tags:
-        lines.append(f"\n{tags}")
-    return "\n".join(lines)
+def _header(profile: dict, total: int, part: int, parts: int) -> str:
+    name = _esc(profile.get("name", ""))
+    tag = _hashtag(profile.get("hashtag", ""))
+    text = f"📋 <b>{name}: нових вакансій {total}</b> {tag}".strip()
+    if parts > 1:
+        text += f" (частина {part}/{parts})"
+    return text
+
+
+def build_profile_messages(profile: dict, jobs: list) -> list:
+    """
+    Повертає список пар (текст повідомлення, вакансії в ньому). Рядки
+    пакуються жадібно, поки влазять у MAX_VISIBLE_CHARS і
+    MAX_LINES_PER_MESSAGE; список у кожному повідомленні загорнутий у
+    <blockquote expandable>.
+    """
+    if not jobs:
+        return []
+    header_reserve = visible_length(_header(profile, len(jobs), 99, 99)) + 2
+
+    chunks, current, current_len = [], [], header_reserve
+    for job in jobs:
+        line = build_job_line(job)
+        line_len = visible_length(line) + 1
+        if current and (len(current) >= MAX_LINES_PER_MESSAGE
+                        or current_len + line_len > MAX_VISIBLE_CHARS):
+            chunks.append(current)
+            current, current_len = [], header_reserve
+        current.append((job, line))
+        current_len += line_len
+    if current:
+        chunks.append(current)
+
+    messages = []
+    for idx, chunk in enumerate(chunks, start=1):
+        body = "\n".join(line for _, line in chunk)
+        text = f"{_header(profile, len(jobs), idx, len(chunks))}\n<blockquote expandable>{body}</blockquote>"
+        messages.append((text, [job for job, _ in chunk]))
+    return messages
 
 
 def _send_single(url: str, chat_id: str, text: str, retry: int = 1) -> None:
@@ -112,9 +165,9 @@ def send_report(profile_results: list, warnings: list = None) -> tuple:
     """
     profile_results: список пар (profile_cfg: dict, jobs: list) у порядку
     профілів. warnings: рядки попереджень (здоров'я джерел тощо).
-    Повертає (failed_jobs, delivered): вакансії, картки яких НЕ дійшли,
-    і кількість успішно надісланих повідомлень (будь-яких, включно із
-    заголовками). delivered == 0 означає, що з чатом щось не так.
+    Повертає (failed_jobs, delivered): вакансії з повідомлень, що НЕ
+    дійшли, і кількість успішно надісланих повідомлень (будь-яких).
+    delivered == 0 означає, що з чатом щось не так.
     """
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"].strip()
@@ -130,19 +183,13 @@ def send_report(profile_results: list, warnings: list = None) -> tuple:
                                "повідомлення 'нічого нового'")
     else:
         for profile, jobs in profile_results:
-            if not jobs:
-                continue
-            name = _esc(profile.get("name", ""))
-            tag = _hashtag(profile.get("hashtag", ""))
-            delivered += _try_send(url, chat_id,
-                                   f"📋 <b>{name}: нових вакансій {len(jobs)}</b> {tag}".strip(),
-                                   f"заголовок профілю {name}")
-            for job in jobs:
-                if _try_send(url, chat_id, build_job_message(job, profile.get("hashtag", "")),
-                             f"картку {job.get('url', '')}"):
+            messages = build_profile_messages(profile, jobs)
+            for idx, (text, chunk_jobs) in enumerate(messages, start=1):
+                what = f"список {profile.get('name', '')} ({idx}/{len(messages)}, {len(chunk_jobs)} вакансій)"
+                if _try_send(url, chat_id, text, what):
                     delivered += 1
                 else:
-                    failed_jobs.append(job)
+                    failed_jobs.extend(chunk_jobs)
 
     for warning in warnings or []:
         delivered += _try_send(url, chat_id, f"⚠️ {_esc(warning)}", "попередження")
@@ -184,8 +231,15 @@ def check_connection(token: str, chat_id: str) -> bool:
     r = chat["result"]
     logger.info("getChat: %s «%s» (id %s)", r.get("type"), r.get("title") or r.get("username"), r.get("id"))
 
-    sent = _call(token, "sendMessage", chat_id=chat_id,
-                 text="✅ Тест: агент пошуку вакансій бачить цей чат.")
+    # Тестове повідомлення — у тому ж форматі, що й звіт (розгортувана
+    # цитата), щоб одразу побачити, як він виглядає в цьому чаті.
+    sample = build_profile_messages(
+        {"name": "Тест", "hashtag": "#test"},
+        [{"title": "Агент пошуку вакансій бачить цей чат", "company": "✅",
+          "url": "https://github.com/Monserg/data-job-search-agent", "source": "telegram_check"}],
+    )[0][0]
+    sent = _call(token, "sendMessage", chat_id=chat_id, text=sample, parse_mode="HTML",
+                 disable_web_page_preview=True)
     if not sent.get("ok"):
         logger.error("sendMessage: %s. Якщо це канал — дай боту право Post messages.",
                      sent.get("description"))

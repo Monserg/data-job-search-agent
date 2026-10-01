@@ -11,6 +11,10 @@
 #   name               — назва для заголовків у Telegram
 #   hashtag            — хештег у картці Telegram
 #   worksheet          — аркуш у Google Sheets (створюється автоматично)
+#   sheet_first_data_row — з якого рядка аркуша починаються дані
+#                        (за замовчуванням 2 — одразу під заголовком;
+#                        3 — якщо в рядку 2 стоять фільтри по колонках).
+#                        Вище цього рядка код нічого не пише.
 #   queries            — текстові запити для джерел, що шукають за текстом
 #                        (RemoteOK, WeWorkRemotely, Remotive, Himalayas,
 #                        NoFluffJobs, JustRemote, DOU без category, Djinni
@@ -217,6 +221,8 @@ profiles:
     name: "Frontend/Full-stack Middle+/Senior"
     hashtag: "#Frontend"
     worksheet: "Vacancies-Frontend"
+    # Рядок 1 — заголовок, рядок 2 — фільтри по колонках, дані з рядка 3.
+    sheet_first_data_row: 3
 
     queries:
       # З таблиці

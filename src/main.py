@@ -1,11 +1,12 @@
 """
 Точка входу / оркестратор.
 
-Запуск: зовнішній cron-job.org щодня о 9:00 Europe/Kyiv робить POST
-workflow_dispatch; резервний внутрішній `schedule:` у workflow спрацьовує
-пізніше і виходить без звіту, якщо прогін за сьогодні вже був
-(data/last_run_date.txt, див. run_guard у config.yaml). Ручний запуск
-через Actions → Run workflow ставить FORCE_RUN=true і захист обходить.
+Запуск: ЄДИНИЙ тригер — зовнішній cron-job.org, який щодня о 9:00
+Europe/Kyiv робить POST workflow_dispatch (див. SETUP.md, крок 6).
+Внутрішнього розкладу GitHub Actions (`schedule:`) немає — він на цьому
+репозиторії ненадійний (запуски затримувались на 4-7+ годин), і жодного
+захисту від подвійного прогону тут більше не потрібно, бо немає другого
+тригера, з яким він міг би зіткнутися.
 
 Порядок дій:
 1. Завантажити конфіг.
@@ -19,14 +20,13 @@ workflow_dispatch; резервний внутрішній `schedule:` у workfl
 4. Дописати рядки в аркуш профілю у Google Sheets.
 5. Надіслати картки в Telegram (заголовок на профіль + картки) і
    попередження про джерела, що кілька днів дають 0.
-6. Зберегти seen_jobs.json, source_health.json, last_run_date.txt.
+6. Зберегти seen_jobs.json і source_health.json.
 
 Звіт навмисно СИРИЙ — без Match Score чи AI-оцінки відповідності
 (шар матчингу прибрано 2026-09-20 як недостовірний).
 """
 import datetime
 import logging
-import os
 import sys
 from collections import defaultdict
 from zoneinfo import ZoneInfo
@@ -42,7 +42,7 @@ import telegram_client
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("job_agent.main")
 
-LAST_RUN_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "last_run_date.txt")
+KYIV_TZ = ZoneInfo("Europe/Kyiv")
 
 
 # ----------------------------------------------------------------------
@@ -130,22 +130,8 @@ def collect_for_profile(key: str, profile: dict, config: dict,
 # Допоміжне
 # ----------------------------------------------------------------------
 
-def today_str(config: dict) -> str:
-    tz_name = (config.get("run_guard") or {}).get("timezone") or "Europe/Kyiv"
-    return datetime.datetime.now(ZoneInfo(tz_name)).date().isoformat()
-
-
-def already_ran_today(today: str) -> bool:
-    if not os.path.exists(LAST_RUN_PATH):
-        return False
-    with open(LAST_RUN_PATH, "r", encoding="utf-8") as f:
-        return f.read().strip() == today
-
-
-def mark_ran_today(today: str) -> None:
-    os.makedirs(os.path.dirname(LAST_RUN_PATH), exist_ok=True)
-    with open(LAST_RUN_PATH, "w", encoding="utf-8") as f:
-        f.write(today + "\n")
+def today_str() -> str:
+    return datetime.datetime.now(KYIV_TZ).date().isoformat()
 
 
 def jobs_to_sheet_rows(jobs: list, date_added: str) -> list:
@@ -176,12 +162,7 @@ def health_thresholds(config: dict) -> dict:
 
 def main() -> int:
     config = load_config()
-    today = today_str(config)
-    force = os.environ.get("FORCE_RUN", "").lower() in ("1", "true", "yes") or "--force" in sys.argv
-
-    if (config.get("run_guard") or {}).get("enabled", True) and not force and already_ran_today(today):
-        logger.info("Прогін за %s уже був — виходжу без звіту (FORCE_RUN=true, щоб обійти).", today)
-        return 0
+    today = today_str()
 
     profiles = config.get("profiles") or {}
     if not profiles:
@@ -233,7 +214,6 @@ def main() -> int:
         logger.error("Не вдалось надіслати Telegram-повідомлення: %s", exc)
 
     save_seen(updated_seen)
-    mark_ran_today(today)
     logger.info("Готово.")
     return 0
 

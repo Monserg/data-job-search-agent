@@ -1,62 +1,62 @@
 {
   "djinni": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "dou": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "himalayas": {
     "last_nonzero": "",
-    "last_run": "2026-10-02",
-    "zero_streak": 3
+    "last_run": "2026-10-03",
+    "zero_streak": 4
   },
   "justjoin": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "justremote": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "linkedin_email": {
     "last_nonzero": "",
-    "last_run": "2026-10-02",
-    "zero_streak": 3
+    "last_run": "2026-10-03",
+    "zero_streak": 4
   },
   "nofluffjobs": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "remoteok": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "remotive": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "robota_ua_email": {
     "last_nonzero": "2026-10-01",
-    "last_run": "2026-10-02",
-    "zero_streak": 1
+    "last_run": "2026-10-03",
+    "zero_streak": 2
   },
   "weworkremotely": {
-    "last_nonzero": "2026-10-02",
-    "last_run": "2026-10-02",
+    "last_nonzero": "2026-10-03",
+    "last_run": "2026-10-03",
     "zero_streak": 0
   },
   "work_ua_email": {
     "last_nonzero": "",
-    "last_run": "2026-10-02",
-    "zero_streak": 3
+    "last_run": "2026-10-03",
+    "zero_streak": 4
   }
 }

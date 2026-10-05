@@ -83,7 +83,7 @@ cron-job.org, деталі в SETUP.md)
 | RemoteOK | JSON API | — |
 | WeWorkRemotely | RSS | `feed` (фід категорії) |
 | Remotive | RSS | — |
-| Himalayas | RSS | — |
+| Himalayas | JSON API (пошук за запитами) | — |
 | NoFluffJobs | недокументований REST | `requirement`, `seniority` |
 | Just Join IT | JSON API фронтенду (`justjoin.it/api/candidate-api/offers`) | `categories`, `experience_levels` (одне значення на запит); `workplace_types`, `max_age_days`, `ukrainians_only`, `with_description` — клієнтські |
 | JustRemote | HTML (SPA, ймовірно 0) | — |
